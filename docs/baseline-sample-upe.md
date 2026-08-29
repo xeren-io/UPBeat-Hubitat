@@ -71,6 +71,8 @@ Receive-component expectations:
 - No duplicate receive-component link IDs were found per device.
 - One parsed module has no preset records: module `151` (`Other New PCS
   KPC(8)`). This is an unsupported 8-button keypad and is skipped.
+- The skipped keypad's button, keypad-indicator, and button-name records are
+  still preserved in the parsed module map.
 
 ## Spot Checks
 

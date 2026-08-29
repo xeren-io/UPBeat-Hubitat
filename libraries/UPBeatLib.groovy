@@ -56,6 +56,7 @@ def buildSceneNetworkId(int networkId, int linkId) {
 @Field static final Map minFieldCounts = [
         '0': 6, '1': 1, '2': 3, '3': 14, '4': 7, '5': 14, '6': 15, '7': 10,
         '8': 5, '9': 5, '10': 12, '11': 12, '12': 3, '13': 7, '14': 10,
+        '17': 5,
         '18': 3, '19': 3
 ]
 
@@ -150,11 +151,20 @@ def processUpeFile(String userInput) {
                                   "receiveComponents": row[10].toInteger(),
                                   "roomName": row[11],
                                   "deviceName": row[12],
-                                  "packetType": row[13].toInteger()]
+                                  "packetType": row[13].toInteger(),
+                                  "presetInfo": [],
+                                  "rockers": [],
+                                  "buttons": [],
+                                  "inputs": [],
+                                  "channelInfo": [],
+                                  "vhcs": [],
+                                  "memory": [],
+                                  "keypadIndicators": [],
+                                  "thermostats": [],
+                                  "buttonNames": []]
                 data['modules'].add(current_device)
                 break
             case "4": // Preset
-                current_device.putIfAbsent('presetInfo', [])
                 current_device['presetInfo'].add([
                         "channelId": row[1].toInteger(),
                         "componentId": row[2].toInteger(),
@@ -163,7 +173,6 @@ def processUpeFile(String userInput) {
                         "presetDimFadeRate": row[6].toInteger()])
                 break
             case "5": // Rocker
-                current_device.putIfAbsent('rockers', [])
                 current_device['rockers'].add([
                         "channelId": row[1].toInteger(),
                         "componentId": row[2].toInteger(),
@@ -180,7 +189,6 @@ def processUpeFile(String userInput) {
                 ])
                 break
             case "6": // Button
-                current_device.putIfAbsent('buttons', [])
                 current_device['buttons'].add([
                         "channelId": row[1].toInteger(),
                         "componentId": row[2].toInteger(),
@@ -198,7 +206,6 @@ def processUpeFile(String userInput) {
                 ])
                 break
             case "7": // Input
-                current_device.putIfAbsent('inputs', [])
                 current_device['inputs'].add([
                         "channelId": row[1].toInteger(),
                         "componentId": row[2].toInteger(),
@@ -211,7 +218,6 @@ def processUpeFile(String userInput) {
                 ])
                 break
             case "8": // Channel Info
-                current_device.putIfAbsent('channelInfo', [])
                 current_device['channelInfo'].add([
                         "channelId": row[1].toInteger(),
                         "dimEnabled": row[3].toInteger(),
@@ -219,7 +225,6 @@ def processUpeFile(String userInput) {
                 ])
                 break
             case "9": // VHC
-                current_device.putIfAbsent('vhcs', [])
                 current_device['vhcs'].add([
                         "channelId": row[1].toInteger(),
                         "componentId": row[2].toInteger(),
@@ -258,15 +263,13 @@ def processUpeFile(String userInput) {
                 break
             case "12": // Device Memory
                 logDebug("Memory (${current_device}): ${row[1..-1]}")
-                current_device.putIfAbsent('memory', [])
                 current_device['memory'].add([
                         "address": row[1],
                         "data": row[2..-1].join(',')
                 ])
                 break
             case "13": // Keypad Indicator
-                current_device.putIfAbsent('receive', [])
-                current_device['receive'].add([
+                current_device['keypadIndicators'].add([
                         "channelId": row[1].toInteger(),
                         "componentId": row[2].toInteger(),
                         "linkId": row[4].toInteger(),
@@ -275,7 +278,6 @@ def processUpeFile(String userInput) {
                 ])
                 break
             case "14": // Thermostat
-                current_device.putIfAbsent('thermostats', [])
                 current_device['thermostats'].add([
                         "channelId": row[1].toInteger(),
                         "componentId": row[2].toInteger(),
@@ -285,6 +287,14 @@ def processUpeFile(String userInput) {
                         "inhibitLink": row[7].toInteger(),
                         "linkBase": row[8].toInteger(),
                         "setpointDelta": row[9].toInteger()
+                ])
+                break
+            case "17": // Keypad Button Name
+                current_device['buttonNames'].add([
+                        "channelId": row[1].toInteger(),
+                        "componentId": row[2].toInteger(),
+                        "moduleId": row[3].toInteger(),
+                        "name": row[4] ?: ""
                 ])
                 break
             case "18": // Room Icon

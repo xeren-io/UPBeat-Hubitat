@@ -288,7 +288,7 @@ private Map buildBulkImportPlan(Map data) {
 
                         if (addPlannedDeviceNetworkId(plan, plannedDeviceNetworkIds, deviceNetworkId, "${describeUpeModule(module)} channel ${channel.channelId}")) {
                             def usedLinkIds = [:]
-                            (module.presetInfo ?: []).each { preset ->
+                            module.presetInfo.each { preset ->
                                 if (preset.channelId == channel.channelId && preset.linkId != 255 && preset.presetDimLevel != 255) {
                                     addPlannedReceiveComponent(plan, devicePlan, usedLinkIds, preset, dimEnabled)
                                 }

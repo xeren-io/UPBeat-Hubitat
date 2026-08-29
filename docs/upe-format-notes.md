@@ -147,13 +147,14 @@ added.
 - `processUpeFile()` now stores ID fields in spec order: manufacturer first,
   product second.
 - `processUpeFile()` stores the ID record kind field as `deviceKind`.
+- Module child-record lists are initialized when the ID record is parsed, so
+  fields like `channelInfo`, `presetInfo`, `keypadIndicators`, and
+  `buttonNames` are always present on module maps.
+- Record type `13` is stored as `keypadIndicators`.
+- Record type `17` is stored as `buttonNames`.
 - `minFieldCounts` now expects seven total fields for preset records, including
   the record type.
-- Record type `17` is present in `sample.upe` but is not included in
-  `minFieldCounts` or parsed by the current code.
-- Current parsing is forgiving and flat: it associates records with the most
-  recent ID record instead of validating expected order and declared counts.
-  This matches the current working behavior, but it means malformed exports can
-  fail later during import instead of at parse time.
+- Current parsing associates device child records with the most recent ID
+  record. It still does not validate declared module/link/component counts.
 - The spec says readers should ignore unexpected/newer records, so stricter
   parsing should still remain forward-compatible.
