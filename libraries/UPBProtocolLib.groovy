@@ -37,14 +37,14 @@ import groovy.transform.Field
 @Field static final byte ACKRQ_MSG = 0x40         // Message ACK (bit 6 = 1)
 @Field static final byte ACKRQ_ID = 0x20          // ID pulse ACK (bit 5 = 1)
 @Field static final byte ACKRQ_PULSE = 0x10       // Pulse ACK (bit 4 = 1)
-@Field static final byte CNT_ZERO = 0             // Transmission count 0
-@Field static final byte CNT_ONE = 1              // Transmission count 1
-@Field static final byte CNT_TWO = 2              // Transmission count 2
-@Field static final byte CNT_THREE = 3            // Transmission count 3
-@Field static final byte SEQ_ZERO = 0             // Sequence 0
-@Field static final byte SEQ_ONE = 1              // Sequence 1
-@Field static final byte SEQ_TWO = 2              // Sequence 2
-@Field static final byte SEQ_THREE = 3            // Sequence 3
+@Field static final byte TX_CNT_ONE = 0           // Transmit packet 1 time
+@Field static final byte TX_CNT_TWO = 1           // Transmit packet 2 times
+@Field static final byte TX_CNT_THREE = 2         // Transmit packet 3 times
+@Field static final byte TX_CNT_FOUR = 3          // Transmit packet 4 times
+@Field static final byte TX_SEQ_FIRST = 0         // 1st packet transmission
+@Field static final byte TX_SEQ_SECOND = 1        // 2nd packet transmission
+@Field static final byte TX_SEQ_THIRD = 2         // 3rd packet transmission
+@Field static final byte TX_SEQ_FOURTH = 3        // 4th packet transmission
 
 
 // MSID Mapping
@@ -132,8 +132,8 @@ static Map parseControlWord(short controlWord) {
  * @param lnk Link bit (0 = Direct, 1 = Link)
  * @param reprq Repeater Request (0-3)
  * @param ackFlags Acknowledgment flags (bitwise OR of ACKRQ_MSG, ACKRQ_ID, ACKRQ_PULSE)
- * @param cnt Transmission Count (0-3)
- * @param seq Transmission Sequence (0-3)
+ * @param cnt Encoded transmission count: use TX_CNT_ONE through TX_CNT_FOUR.
+ * @param seq Encoded transmission sequence: use TX_SEQ_FIRST through TX_SEQ_FOURTH.
  * @return The encoded 16-bit control word as a short, with LEN set to 0.
  * @throws IllegalArgumentException if inputs are invalid.
  */

@@ -684,7 +684,7 @@ def activateScene(Integer networkId, Integer linkId, Integer sourceId) {
         return [result: false, reason: "Source ID must be 0-255"]
     }
 
-    def controlWord = encodeControlWord(LNK_LINK, REPRQ_NONE, ACKRQ_NONE, CNT_ONE, SEQ_ZERO)
+    def controlWord = encodeControlWord(LNK_LINK, REPRQ_NONE, ACKRQ_NONE, TX_CNT_TWO, TX_SEQ_FIRST)
     logDebug("Activating scene with controlWord=0x%04X", controlWord)
     def result = pimDevice.transmitMessage(controlWord, (byte) networkId, (byte) linkId, (byte) sourceId, UPB_ACTIVATE_LINK, null)
 
@@ -713,7 +713,7 @@ def deactivateScene(Integer networkId, Integer linkId, Integer sourceId) {
         return [result: false, reason: "Source ID must be 0-255"]
     }
 
-    def controlWord = encodeControlWord(LNK_LINK, REPRQ_NONE, ACKRQ_NONE, CNT_ONE, SEQ_ZERO)
+    def controlWord = encodeControlWord(LNK_LINK, REPRQ_NONE, ACKRQ_NONE, TX_CNT_TWO, TX_SEQ_FIRST)
     logDebug("Deactivating scene with controlWord=0x%04X", controlWord)
     def result = pimDevice.transmitMessage(controlWord, (byte) networkId, (byte) linkId, (byte) sourceId, UPB_DEACTIVATE_LINK, null)
 
@@ -755,7 +755,7 @@ def gotoLevel(Integer networkId, Integer deviceId, Integer sourceId, Integer lev
         return [result: false, reason: "Channel must be 0-255"]
     }
 
-    def controlWord = encodeControlWord(LNK_DIRECT, REPRQ_NONE, ACKRQ_PULSE, CNT_ONE, SEQ_ZERO)
+    def controlWord = encodeControlWord(LNK_DIRECT, REPRQ_NONE, ACKRQ_PULSE, TX_CNT_TWO, TX_SEQ_FIRST)
     logDebug("Setting level with controlWord=0x%04X", controlWord)
     def result = pimDevice.transmitMessage(controlWord, (byte) networkId, (byte) deviceId, (byte) sourceId, UPB_GOTO, [(byte) level, (byte) duration, (byte) channel] as byte[])
 
@@ -793,7 +793,7 @@ def blink(Integer networkId, Integer deviceId, Integer sourceId, Integer rate, I
         return [result: false, reason: "Channel must be 0-255"]
     }
 
-    def controlWord = encodeControlWord(LNK_DIRECT, REPRQ_NONE, ACKRQ_PULSE, CNT_ONE, SEQ_ZERO)
+    def controlWord = encodeControlWord(LNK_DIRECT, REPRQ_NONE, ACKRQ_PULSE, TX_CNT_TWO, TX_SEQ_FIRST)
     logDebug("Setting level with controlWord=0x%04X", controlWord)
     def result = pimDevice.transmitMessage(controlWord, (byte) networkId, (byte) deviceId, (byte) sourceId, UPB_BLINK, [(byte) rate, (byte) channel] as byte[])
 
@@ -822,7 +822,7 @@ def requestDeviceState(Integer networkId, Integer deviceId, Integer sourceId) {
         return [result: false, reason: "Source ID must be 0-255"]
     }
 
-    def controlWord = encodeControlWord(LNK_DIRECT, REPRQ_NONE, ACKRQ_PULSE, CNT_ONE, SEQ_ZERO)
+    def controlWord = encodeControlWord(LNK_DIRECT, REPRQ_NONE, ACKRQ_PULSE, TX_CNT_TWO, TX_SEQ_FIRST)
     logDebug("Requesting device state with controlWord=0x%04X", controlWord)
     def result = pimDevice.transmitMessage(controlWord, (byte) networkId, (byte) deviceId, (byte) sourceId, UPB_REPORT_STATE, null)
 
