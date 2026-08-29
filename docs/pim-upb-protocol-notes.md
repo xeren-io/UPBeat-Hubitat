@@ -47,10 +47,9 @@ means busy, and `PE` means rejected.
 - `PN` means transmit completed and the PIM did not observe an ACK pulse.
 
 For transmit commands in Message Mode, waiting for `PK` or `PN` after `PA` is
-expected. `PN` is normal for link commands sent with no ACK pulse request. If a
-future log ever shows `PK` after a no-ACK link command, that should not be
-treated as a PIM command failure; it means the packet was transmitted and an ACK
-pulse was seen anyway.
+expected. `PN` is the normal completion response for commands sent with no ACK
+pulse request. If `ACKRQ_PULSE` is requested, `PK` means the transmission was
+acknowledged and `PN` means it was not acknowledged.
 
 ## UPB Packet Shape
 
