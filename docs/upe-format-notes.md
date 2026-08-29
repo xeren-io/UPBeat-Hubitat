@@ -117,8 +117,8 @@ Keypad button name record (`17`) fields after the type:
 | 1 | Keypad |
 | 2 | Switch |
 | 3 | Module |
-| 4 | Input module |
-| 5 | Input-output module |
+| 4 | Input Module |
+| 5 | Input-Output Module |
 | 6 | VPM |
 | 7 | VHC |
 | 8 | Thermostat |
@@ -146,6 +146,7 @@ added.
 
 - `processUpeFile()` now stores ID fields in spec order: manufacturer first,
   product second.
+- `processUpeFile()` stores the ID record kind field as `deviceKind`.
 - `minFieldCounts` now expects seven total fields for preset records, including
   the record type.
 - Record type `17` is present in `sample.upe` but is not included in

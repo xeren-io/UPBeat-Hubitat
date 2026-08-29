@@ -161,19 +161,14 @@ private String formatUpeDisplayName(String sourceName, String fallbackName) {
     return displayName ?: fallbackName
 }
 
-private Integer getUpeDeviceKind(Map module) {
-    if (module.containsKey("deviceKind")) {
-        return module.deviceKind
-    }
-    if (module.containsKey("deviceType")) {
-        return module.deviceType
-    }
-    return null
+private boolean isSupportedUpeModule(Map module) {
+    def deviceKindInfo = UPE_DEVICE_KINDS[module.deviceKind]
+    return deviceKindInfo && deviceKindInfo.supported == true
 }
 
-private boolean isSupportedUpeModule(Map module) {
-    def deviceKind = getUpeDeviceKind(module)
-    return deviceKind == UPE_DEVICE_KIND_SWITCH || deviceKind == UPE_DEVICE_KIND_MODULE
+private String getUpeDeviceKindName(Integer deviceKind) {
+    def deviceKindInfo = UPE_DEVICE_KINDS[deviceKind]
+    return deviceKindInfo ? deviceKindInfo.name : "Unknown"
 }
 
 private String describeUpeModule(Map module) {
@@ -255,13 +250,14 @@ private Map buildBulkImportPlan(Map data) {
     }
 
     (data.modules ?: []).each { module ->
-        def deviceKind = getUpeDeviceKind(module)
+        def deviceKind = module.deviceKind
         if (deviceKind == null) {
             plan.errors.add("${describeUpeModule(module)} is missing a UPE device kind.")
         } else if (!isSupportedUpeModule(module)) {
             plan.skippedModules.add([
                     moduleId: module.moduleId,
                     deviceKind: deviceKind,
+                    deviceKindName: getUpeDeviceKindName(deviceKind),
                     manufacturerId: module.manufacturerId,
                     productId: module.productId,
                     name: "${module.roomName ?: ''} ${module.deviceName ?: ''}".trim()
@@ -353,7 +349,9 @@ def bulkImport() {
 
                     plan.skippedModules.each { skippedModule ->
                         def skippedName = skippedModule.name ? " ${skippedModule.name}" : ""
-                        paragraph "Skipped unsupported module ${skippedModule.moduleId}${skippedName} (kind ${skippedModule.deviceKind}, manufacturer ${skippedModule.manufacturerId}, product ${skippedModule.productId})"
+                        def skippedMessage = "Skipped unsupported module ${skippedModule.moduleId}${skippedName} (kind ${skippedModule.deviceKind}: ${skippedModule.deviceKindName}, manufacturer ${skippedModule.manufacturerId}, product ${skippedModule.productId})"
+                        logInfo(skippedMessage)
+                        paragraph skippedMessage
                     }
 
                     paragraph "Import completed successfully: ${plan.scenes.size()} scenes, ${plan.devices.size()} devices, ${plan.skippedModules.size()} unsupported modules skipped."
@@ -560,8 +558,19 @@ def mainPage() {
  * Global Static Data
  ***************************************************************************/
 @Field static String pimDeviceId = "UPBeat_PIM"
-@Field static final int UPE_DEVICE_KIND_SWITCH = 2
-@Field static final int UPE_DEVICE_KIND_MODULE = 3
+@Field static final Map UPE_DEVICE_KINDS = [
+        0: [name: "Other", supported: false],
+        1: [name: "Keypad", supported: false],
+        2: [name: "Switch", supported: true],
+        3: [name: "Module", supported: true],
+        4: [name: "Input Module", supported: false],
+        5: [name: "Input-Output Module", supported: false],
+        6: [name: "VPM", supported: false],
+        7: [name: "VHC", supported: false],
+        8: [name: "Thermostat", supported: false],
+        9: [name: "XPW", supported: false],
+        10: [name: "RFI", supported: false]
+]
 
 /***************************************************************************
  * Core App Functions

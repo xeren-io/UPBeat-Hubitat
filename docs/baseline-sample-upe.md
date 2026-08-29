@@ -103,8 +103,8 @@ Devices:
 Skipped unsupported modules:
 
 | Module ID | Old DNI | Name | Kind | Manufacturer | Product |
-| ---: | --- | --- | ---: | ---: | ---: |
-| 151 | `UPBeat_879701` | Other New PCS KPC(8) | 1 | 1 | 66 |
+| ---: | --- | --- | --- | ---: | ---: |
+| 151 | `UPBeat_879701` | Other New PCS KPC(8) | 1: Keypad | 1 | 66 |
 
 Receive components:
 

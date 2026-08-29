@@ -144,7 +144,7 @@ def processUpeFile(String userInput) {
                                   "productId": row[4].toInteger(),
                                   "firmwareMajorVersion": row[5].toInteger(),
                                   "firmwareMinorVersion": row[6].toInteger(),
-                                  "deviceType": row[7].toInteger(),
+                                  "deviceKind": row[7].toInteger(),
                                   "channels": row[8].toInteger(),
                                   "transmitComponents": row[9].toInteger(),
                                   "receiveComponents": row[10].toInteger(),
