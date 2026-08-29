@@ -140,8 +140,8 @@ def processUpeFile(String userInput) {
             case "3": // Module
                 current_device = ["moduleId": row[1].toInteger(),
                                   "networkId": row[2].toInteger(),
-                                  "productId": row[3].toInteger(),
-                                  "manufacturerId": row[4].toInteger(),
+                                  "manufacturerId": row[3].toInteger(),
+                                  "productId": row[4].toInteger(),
                                   "firmwareMajorVersion": row[5].toInteger(),
                                   "firmwareMinorVersion": row[6].toInteger(),
                                   "deviceType": row[7].toInteger(),

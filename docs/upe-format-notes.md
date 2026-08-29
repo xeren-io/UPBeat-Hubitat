@@ -144,9 +144,8 @@ unsupported unless explicit support is added.
 
 ## Parser Gaps Found Against The Spec
 
-- `processUpeFile()` currently stores ID fields `productId` and
-  `manufacturerId` reversed. The spec order is manufacturer first, product
-  second.
+- `processUpeFile()` now stores ID fields in spec order: manufacturer first,
+  product second.
 - `minFieldCounts` currently expects six total fields for preset records, but a
   valid preset row has seven total fields including the record type.
 - Record type `17` is present in `sample.upe` but is not included in
