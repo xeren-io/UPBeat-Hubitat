@@ -156,65 +156,219 @@ def bulkImportPage() {
     }
 }
 
-def bulkImport() {
-    return dynamicPage(name: "bulkImport", title: "Device Import Results", install: false, uninstall: false, nextPage: "mainPage") {
+private String formatUpeDisplayName(String sourceName, String fallbackName) {
+    def displayName = "${sourceName ?: ''}".trim().tokenize().collect { it.capitalize() }.join(' ')
+    return displayName ?: fallbackName
+}
+
+private Integer getUpeDeviceKind(Map module) {
+    if (module.containsKey("deviceKind")) {
+        return module.deviceKind
+    }
+    if (module.containsKey("deviceType")) {
+        return module.deviceType
+    }
+    return null
+}
+
+private boolean isSupportedUpeModule(Map module) {
+    def deviceKind = getUpeDeviceKind(module)
+    return deviceKind == UPE_DEVICE_KIND_SWITCH || deviceKind == UPE_DEVICE_KIND_MODULE
+}
+
+private String describeUpeModule(Map module) {
+    def name = "${module.roomName ?: ''} ${module.deviceName ?: ''}".trim()
+    return "module ${module.moduleId ?: '?'}${name ? " (${name})" : ""}"
+}
+
+private boolean addPlannedDeviceNetworkId(Map plan, Map plannedDeviceNetworkIds, String deviceNetworkId, String description) {
+    if (plannedDeviceNetworkIds.containsKey(deviceNetworkId)) {
+        plan.errors.add("Duplicate child device network ID ${deviceNetworkId} for ${description}; already planned for ${plannedDeviceNetworkIds[deviceNetworkId]}.")
+        return false
+    }
+    plannedDeviceNetworkIds[deviceNetworkId] = description
+    return true
+}
+
+private void addPlannedReceiveComponent(Map plan, Map devicePlan, Map usedLinkIds, Map preset, boolean dimEnabled) {
+    def slot = preset.componentId + 1
+    def linkId = preset.linkId
+    def level = preset.presetDimLevel
+
+    if (slot < 1 || slot > 16) {
+        plan.errors.add("${devicePlan.deviceNetworkId} preset component ${preset.componentId} maps to receive slot ${slot}; supported slots are 1-16.")
+        return
+    }
+    if (linkId < 1 || linkId > 250) {
+        plan.errors.add("${devicePlan.deviceNetworkId} preset slot ${slot} has invalid link ID ${linkId}; valid links are 1-250.")
+        return
+    }
+    if (dimEnabled) {
+        if (level < 0 || level > 100) {
+            plan.errors.add("${devicePlan.deviceNetworkId} preset slot ${slot} has invalid dim level ${level}; dimming devices support 0-100.")
+            return
+        }
+    } else if (level != 0 && level != 100) {
+        plan.errors.add("${devicePlan.deviceNetworkId} preset slot ${slot} has invalid non-dimming level ${level}; non-dimming devices support 0 or 100.")
+        return
+    }
+    if (usedLinkIds.containsKey(linkId)) {
+        plan.errors.add("${devicePlan.deviceNetworkId} has duplicate receive link ID ${linkId} in slots ${usedLinkIds[linkId]} and ${slot}.")
+        return
+    }
+
+    usedLinkIds[linkId] = slot
+    devicePlan.receiveComponents.add([slot: slot, linkId: linkId, level: level])
+}
+
+private Map buildBulkImportPlan(Map data) {
+    def plan = [
+            errors: [],
+            scenes: [],
+            devices: [],
+            skippedModules: []
+    ]
+    def plannedDeviceNetworkIds = [:]
+
+    if (!data?.systemInfo || data.systemInfo.networkId == null) {
+        plan.errors.add("UPE file is missing system network information.")
+        return plan
+    }
+
+    def networkId = data.systemInfo.networkId
+
+    (data.links ?: []).each { link ->
         try {
-            def data = processUpeFile(settings.upeFileData)
-            section() {
-                deleteAllDevices()
+            def deviceNetworkId = buildSceneNetworkId(networkId, link.linkId)
+            def sceneName = formatUpeDisplayName(link.name, "UPB Link ${link.linkId}")
+            if (addPlannedDeviceNetworkId(plan, plannedDeviceNetworkIds, deviceNetworkId, "link ${link.linkId}")) {
+                plan.scenes.add([
+                        deviceNetworkId: deviceNetworkId,
+                        sceneName: sceneName,
+                        networkId: networkId,
+                        linkId: link.linkId
+                ])
+            }
+        } catch (IllegalArgumentException e) {
+            plan.errors.add("Link ${link.linkId ?: '?'} cannot be imported: ${e.message}")
+        }
+    }
 
-                // Create Link Devices
-                data.links.each { link ->
-                    def deviceNetworkId = buildSceneNetworkId( data.systemInfo.networkId, link.linkId)
-                    def sceneName = link.name.trim().tokenize().collect { it.capitalize() }.join(' ')
-                    paragraph "Adding link device [${deviceNetworkId}] with scene name [${sceneName}]"
-                    childDevice = addChildDevice("UPBeat", "UPB Scene Switch" , deviceNetworkId, [name: sceneName, label: sceneName])
-                    childDevice.updateNetworkId(data.systemInfo.networkId)
-                    childDevice.updateLinkId(link.linkId)
-                }
-
-                // Create Switch Devices
-                data.modules.each { module ->
-                    module.channelInfo.each { channel ->
+    (data.modules ?: []).each { module ->
+        def deviceKind = getUpeDeviceKind(module)
+        if (deviceKind == null) {
+            plan.errors.add("${describeUpeModule(module)} is missing a UPE device kind.")
+        } else if (!isSupportedUpeModule(module)) {
+            plan.skippedModules.add([
+                    moduleId: module.moduleId,
+                    deviceKind: deviceKind,
+                    manufacturerId: module.manufacturerId,
+                    productId: module.productId,
+                    name: "${module.roomName ?: ''} ${module.deviceName ?: ''}".trim()
+            ])
+        } else if (!module.channelInfo) {
+            plan.errors.add("${describeUpeModule(module)} is supported but has no channel info records.")
+        } else {
+            module.channelInfo.each { channel ->
+                try {
+                    if (channel.dimEnabled != 0 && channel.dimEnabled != 1) {
+                        plan.errors.add("${describeUpeModule(module)} channel ${channel.channelId} has invalid dim flag ${channel.dimEnabled}; expected 0 or 1.")
+                    } else {
                         def channelId = channel.channelId + 1
                         def deviceNetworkId = buildDeviceNetworkId(module.networkId, module.moduleId, channelId)
-                        def deviceName = "${module.roomName} ${module.deviceName}".trim().tokenize().collect { it.capitalize() }.join(' ')
-                        if( channel.dimEnabled ){
-                            paragraph "Adding dimming switch [${deviceNetworkId}] with device name [${deviceName}]"
-                            childDevice = addChildDevice("UPBeat", "UPB Dimming Switch" , deviceNetworkId, [name: deviceName, label: deviceName])
-                            childDevice.updateNetworkId(module.networkId)
-                            childDevice.updateDeviceId(module.moduleId)
-                            childDevice.updateChannelId(channelId)
-                        } else {
-                            paragraph "Adding non-dimming switch [${deviceNetworkId}] with device name [${deviceName}]"
-                            childDevice = addChildDevice("UPBeat", "UPB Non-Dimming Switch" , deviceNetworkId, [name: deviceName, label: deviceName])
-                            childDevice.updateNetworkId(module.networkId)
-                            childDevice.updateDeviceId(module.moduleId)
-                            childDevice.updateChannelId(channelId)
-                        }
+                        def deviceName = formatUpeDisplayName("${module.roomName ?: ''} ${module.deviceName ?: ''}", "UPB Device ${module.moduleId}")
+                        def dimEnabled = (channel.dimEnabled == 1)
+                        def devicePlan = [
+                                deviceNetworkId: deviceNetworkId,
+                                driverName: dimEnabled ? "UPB Dimming Switch" : "UPB Non-Dimming Switch",
+                                deviceName: deviceName,
+                                networkId: module.networkId,
+                                moduleId: module.moduleId,
+                                channelId: channelId,
+                                zeroBasedChannelId: channel.channelId,
+                                dimEnabled: dimEnabled,
+                                receiveComponents: []
+                        ]
 
-                        def device = getChildDevice(deviceNetworkId)
-                        if (device){
-                            // Populate receive components
-                            module.presetInfo.each { preset ->
-                                if ( preset.channelId == channel.channelId && preset.linkId != 255 && preset.presetDimLevel != 255)
-                                {
-                                    paragraph "Adding preset to [${deviceNetworkId}] with device name [${deviceName}] at slot ${preset.componentId}  ${preset.linkId}:${preset.presetDimLevel}"
-                                    device.updateReceiveComponentSlot(preset.componentId + 1, preset.linkId, preset.presetDimLevel)
+                        if (addPlannedDeviceNetworkId(plan, plannedDeviceNetworkIds, deviceNetworkId, "${describeUpeModule(module)} channel ${channel.channelId}")) {
+                            def usedLinkIds = [:]
+                            (module.presetInfo ?: []).each { preset ->
+                                if (preset.channelId == channel.channelId && preset.linkId != 255 && preset.presetDimLevel != 255) {
+                                    addPlannedReceiveComponent(plan, devicePlan, usedLinkIds, preset, dimEnabled)
                                 }
                             }
-                            def components = device.getReceiveComponents()
-                            device.updateDataValue("receiveComponents", JsonOutput.toJson(components))
+                            plan.devices.add(devicePlan)
                         }
                     }
+                } catch (IllegalArgumentException e) {
+                    plan.errors.add("${describeUpeModule(module)} channel ${channel.channelId ?: '?'} cannot be imported: ${e.message}")
                 }
-                paragraph "Import completed successfully"
-                app.removeSetting("upeFileData")
+            }
+        }
+    }
+
+    return plan
+}
+
+def bulkImport() {
+    return dynamicPage(name: "bulkImport", title: "Device Import Results", install: false, uninstall: false, nextPage: "mainPage") {
+        def importStarted = false
+        try {
+            def data = processUpeFile(settings.upeFileData)
+            def plan = buildBulkImportPlan(data)
+            section() {
+                if (plan.errors) {
+                    paragraph "Import was not applied. Existing devices were not changed."
+                    plan.errors.each { importError ->
+                        paragraph "Import Error: ${importError}"
+                    }
+                } else {
+                    importStarted = true
+                    deleteAllDevices()
+
+                    // Create Link Devices
+                    plan.scenes.each { scenePlan ->
+                        paragraph "Adding link device [${scenePlan.deviceNetworkId}] with scene name [${scenePlan.sceneName}]"
+                        def childDevice = addChildDevice("UPBeat", "UPB Scene Switch", scenePlan.deviceNetworkId, [name: scenePlan.sceneName, label: scenePlan.sceneName])
+                        childDevice.updateNetworkId(scenePlan.networkId)
+                        childDevice.updateLinkId(scenePlan.linkId)
+                    }
+
+                    // Create Switch Devices
+                    plan.devices.each { devicePlan ->
+                        paragraph "Adding ${devicePlan.driverName.toLowerCase()} [${devicePlan.deviceNetworkId}] with device name [${devicePlan.deviceName}]"
+                        def childDevice = addChildDevice("UPBeat", devicePlan.driverName, devicePlan.deviceNetworkId, [name: devicePlan.deviceName, label: devicePlan.deviceName])
+                        childDevice.updateNetworkId(devicePlan.networkId)
+                        childDevice.updateDeviceId(devicePlan.moduleId)
+                        childDevice.updateChannelId(devicePlan.channelId)
+
+                        devicePlan.receiveComponents.each { receiveComponent ->
+                            paragraph "Adding preset to [${devicePlan.deviceNetworkId}] with device name [${devicePlan.deviceName}] at slot ${receiveComponent.slot}  ${receiveComponent.linkId}:${receiveComponent.level}"
+                            childDevice.updateReceiveComponentSlot(receiveComponent.slot, receiveComponent.linkId, receiveComponent.level)
+                        }
+
+                        def components = childDevice.getReceiveComponents()
+                        childDevice.updateDataValue("receiveComponents", JsonOutput.toJson(components))
+                    }
+
+                    plan.skippedModules.each { skippedModule ->
+                        def skippedName = skippedModule.name ? " ${skippedModule.name}" : ""
+                        paragraph "Skipped unsupported module ${skippedModule.moduleId}${skippedName} (kind ${skippedModule.deviceKind}, manufacturer ${skippedModule.manufacturerId}, product ${skippedModule.productId})"
+                    }
+
+                    paragraph "Import completed successfully: ${plan.scenes.size()} scenes, ${plan.devices.size()} devices, ${plan.skippedModules.size()} unsupported modules skipped."
+                    app.removeSetting("upeFileData")
+                }
             }
 
-        } catch(IllegalArgumentException e) {
+        } catch(Exception e) {
             section() {
                 paragraph "Import Error: ${e.message}"
+                if (!importStarted) {
+                    paragraph "Existing devices were not changed."
+                } else {
+                    paragraph "Import failed after device changes started. Review child devices before retrying."
+                }
             }
         }
     }
@@ -406,6 +560,8 @@ def mainPage() {
  * Global Static Data
  ***************************************************************************/
 @Field static String pimDeviceId = "UPBeat_PIM"
+@Field static final int UPE_DEVICE_KIND_SWITCH = 2
+@Field static final int UPE_DEVICE_KIND_MODULE = 3
 
 /***************************************************************************
  * Core App Functions

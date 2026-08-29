@@ -1,8 +1,8 @@
 # Baseline: sample.upe
 
-This baseline captures the expected behavior of the current working code before
-refactoring or bug fixes. It is intentionally based on the existing importer
-rules in `apps/UPBeat_App.groovy`, not on a redesigned import flow.
+This baseline captures the expected behavior of the current importer for
+`sample.upe`. It is based on the supported Hubitat child drivers, so unsupported
+UPE device kinds are parsed but skipped during import.
 
 Format reference notes are in `docs/upe-format-notes.md`. PIM and UPB packet
 notes are in `docs/pim-upb-protocol-notes.md`.
@@ -42,8 +42,9 @@ Do not record or publish the network password from the UPE file.
 
 ## Current Import Expectations
 
-Bulk import currently deletes every non-PIM child device, then recreates devices
-from the parsed UPE data.
+Bulk import builds and validates an import plan first. If the plan is valid, it
+deletes every non-PIM child device, then recreates supported devices from the
+parsed UPE data.
 
 Expected children after importing `sample.upe`:
 
@@ -51,9 +52,9 @@ Expected children after importing `sample.upe`:
 | --- | ---: |
 | UPB Scene Switch | 44 |
 | UPB Dimming Switch | 28 |
-| UPB Non-Dimming Switch | 26 |
-| Non-PIM total | 98 |
-| Total including PIM | 99 |
+| UPB Non-Dimming Switch | 25 |
+| Non-PIM total | 97 |
+| Total including PIM | 98 |
 
 Generated DNI expectations:
 
@@ -68,9 +69,8 @@ Receive-component expectations:
   records.
 - All 212 are valid under the current `getReceiveComponents()` rules.
 - No duplicate receive-component link IDs were found per device.
-- One imported module has no preset records: `UPBeat_879701` (`Other New PCS
-  KPC(8)`). This is an unsupported 8-button keypad. Under the current importer,
-  it still imports as a non-dimming switch with an empty receive-component map.
+- One parsed module has no preset records: module `151` (`Other New PCS
+  KPC(8)`). This is an unsupported 8-button keypad and is skipped.
 
 ## Spot Checks
 
@@ -99,7 +99,12 @@ Devices:
 | `UPBeat_870101` | UPB Dimming Switch | Kitchen Edge Lights |
 | `UPBeat_870401` | UPB Non-Dimming Switch | Kitchen Pantry Light |
 | `UPBeat_873201` | UPB Dimming Switch | Family Room Lights |
-| `UPBeat_879701` | UPB Non-Dimming Switch | Other New PCS KPC(8), unsupported 8-button keypad |
+
+Skipped unsupported modules:
+
+| Module ID | Old DNI | Name | Kind | Manufacturer | Product |
+| ---: | --- | --- | ---: | ---: | ---: |
+| 151 | `UPBeat_879701` | Other New PCS KPC(8) | 1 | 1 | 66 |
 
 Receive components:
 

@@ -125,29 +125,29 @@ Keypad button name record (`17`) fields after the type:
 | 9 | XPW |
 | 10 | RFI |
 
-Current importer support is effectively switch/module channel import plus scene
-switch creation from links. Keypads and other kinds should be treated as
-unsupported unless explicit support is added.
+Importer support is switch/module channel import plus scene switch creation
+from links. Keypads and other kinds are skipped unless explicit support is
+added.
 
 ## Sample-Specific Notes
 
 `sample.upe` contains one unsupported keypad:
 
-- DNI under current import rules: `UPBeat_879701`
+- DNI under the old import rules: `UPBeat_879701`
 - UPE ID record: module `151`, network `135`, manufacturer `1`, product `66`,
   kind `1`
 - Product `66` is a PCS KPC8 controller/keypad.
 - The sample has eight button records, sixteen keypad indicator records, and
   eight keypad button name records for this module.
-- Current code imports this as a `UPB Non-Dimming Switch` because the channel is
-  non-dimming and the importer does not branch on device kind.
+- Current code skips this module because keypads are not supported child
+  devices.
 
-## Parser Gaps Found Against The Spec
+## Parser Notes And Remaining Gaps
 
 - `processUpeFile()` now stores ID fields in spec order: manufacturer first,
   product second.
-- `minFieldCounts` currently expects six total fields for preset records, but a
-  valid preset row has seven total fields including the record type.
+- `minFieldCounts` now expects seven total fields for preset records, including
+  the record type.
 - Record type `17` is present in `sample.upe` but is not included in
   `minFieldCounts` or parsed by the current code.
 - Current parsing is forgiving and flat: it associates records with the most

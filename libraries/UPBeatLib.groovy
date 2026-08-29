@@ -54,7 +54,7 @@ def buildSceneNetworkId(int networkId, int linkId) {
 @Field static final int UPE_FILE_VERSION = 5
 
 @Field static final Map minFieldCounts = [
-        '0': 6, '1': 1, '2': 3, '3': 14, '4': 6, '5': 14, '6': 15, '7': 10,
+        '0': 6, '1': 1, '2': 3, '3': 14, '4': 7, '5': 14, '6': 15, '7': 10,
         '8': 5, '9': 5, '10': 12, '11': 12, '12': 3, '13': 7, '14': 10,
         '18': 3, '19': 3
 ]
