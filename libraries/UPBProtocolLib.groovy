@@ -25,6 +25,8 @@ import groovy.transform.Field
 @Field static final short CTRL_ACKRQ_MASK = 0x0070  // Bits 6-4
 @Field static final short CTRL_CNT_MASK = 0x000C    // Bits 3-2
 @Field static final short CTRL_SEQ_MASK = 0x0003    // Bits 1-0
+@Field static final int UPB_MESSAGE_PACKET_MIN_LENGTH = 7 // Header + MDID + checksum
+@Field static final int UPB_PACKET_MAX_LENGTH = 24
 
 // Control word values
 @Field static final byte LNK_DIRECT = 0           // Direct packet
@@ -212,27 +214,44 @@ static byte[] buildPacket(short controlWord, byte networkId, byte destinationId,
  * Parses a UPB packet and extracts header and message fields.
  * @param data The raw packet bytes.
  * @return A map with parsed fields.
- * @throws IllegalArgumentException if the packet is invalid (length < 6 or checksum ≠ 0).
+ * @throws IllegalArgumentException if the packet is invalid.
  */
 static Map parsePacket(byte[] data) {
-    if (data.size() < 6) {
-        throw new IllegalArgumentException("Invalid UPB packet: length ${data.size()} < 6 bytes")
+    if (data == null) {
+        throw new IllegalArgumentException("Invalid UPB packet: null")
     }
 
-    byte sum = 0
-    data.each { b -> sum += (b & 0xFF) } // Unsigned summation
-    if (sum != 0) {
-        throw new IllegalArgumentException("Invalid UPB packet: checksum 0x${String.format('%02X', sum)}")
+    int packetLength = data.length
+    if (packetLength < UPB_MESSAGE_PACKET_MIN_LENGTH) {
+        throw new IllegalArgumentException("Invalid UPB packet: length ${packetLength} < ${UPB_MESSAGE_PACKET_MIN_LENGTH} bytes")
+    }
+    if (packetLength > UPB_PACKET_MAX_LENGTH) {
+        throw new IllegalArgumentException("Invalid UPB packet: length ${packetLength} > ${UPB_PACKET_MAX_LENGTH} bytes")
     }
 
     short controlWord = (short) (((data[0] & 0xFF) << 8) | (data[1] & 0xFF))
+    int declaredLength = (controlWord & CTRL_LEN_MASK) >> 8
+    if (declaredLength != packetLength) {
+        throw new IllegalArgumentException("Invalid UPB packet: CTL LEN ${declaredLength} != actual length ${packetLength}")
+    }
+
+    int sum = 0
+    data.each { b -> sum = (sum + (b & 0xFF)) & 0xFF }
+    if (sum != 0) {
+        throw new IllegalArgumentException("Invalid UPB packet: checksum sum 0x${String.format('%02X', sum)}")
+    }
+
     byte networkId = data[2]
     byte destinationId = data[3]
     byte sourceId = data[4]
     byte messageDataId = data[5]
-    byte messageSetId = (messageDataId >> 5) & 0x07
-    byte messageId = messageDataId & 0x1F
-    byte[] messageArgs = data.size() > 6 ? data[6..-2] : new byte[0]
+    int unsignedMessageDataId = messageDataId & 0xFF
+    byte messageSetId = (byte) ((unsignedMessageDataId >> 5) & 0x07)
+    byte messageId = (byte) (unsignedMessageDataId & 0x1F)
+    byte[] messageArgs = new byte[0]
+    if (packetLength > UPB_MESSAGE_PACKET_MIN_LENGTH) {
+        messageArgs = data[6..(packetLength - 2)] as byte[]
+    }
 
     return [
             controlWord: controlWord,

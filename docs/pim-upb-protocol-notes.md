@@ -73,7 +73,8 @@ the packet bytes before the checksum; summing the whole packet including
 checksum should produce low byte `0x00`.
 
 Current `buildPacket()` follows this shape for the command/report packets used
-by the app. Current `parsePacket()` should be tightened before deeper refactors:
+by the app. Current `parsePacket()` enforces the packet rules this app depends
+on:
 
 - reject null and empty input explicitly;
 - reject command/report packets shorter than 7 bytes;
