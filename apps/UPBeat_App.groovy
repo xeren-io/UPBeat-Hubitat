@@ -181,14 +181,90 @@ private String getUpeImportTimestamp() {
     return new Date().format("yyyy-MM-dd'T'HH:mm:ssZ", timeZone)
 }
 
-private void markUpeManagedChildDevice(childDevice, Map metadata, String importTimestamp) {
+/*
+ * UPE metadata marks child devices that bulk import is allowed to update or
+ * delete during later syncs. User-facing names and labels are only set when a
+ * child is created.
+ */
+private void markUpeManagedChildDevice(childDevice, Map metadata, String importTimestamp, boolean isNewChild) {
     childDevice.updateDataValue("upeManaged", "true")
     childDevice.updateDataValue("upeSource", "bulkImport")
-    childDevice.updateDataValue("upeImportedAt", importTimestamp)
+    if (isNewChild || !childDevice.getDataValue("upeImportedAt")) {
+        childDevice.updateDataValue("upeImportedAt", importTimestamp)
+    }
+    if (!isNewChild) {
+        childDevice.updateDataValue("upeUpdatedAt", importTimestamp)
+    }
 
     metadata.each { key, value ->
         childDevice.updateDataValue(key.toString(), value == null ? "" : value.toString())
     }
+}
+
+private boolean isPimChildDevice(childDevice) {
+    return childDevice.deviceNetworkId == pimDeviceId || childDevice.typeName == "UPB Powerline Interface Module"
+}
+
+private boolean isUpeManagedChildDevice(childDevice) {
+    return childDevice.getDataValue("upeManaged") == "true"
+}
+
+private String describeChildDevice(childDevice) {
+    return "${childDevice.label ?: childDevice.name ?: childDevice.deviceNetworkId} (${childDevice.typeName})"
+}
+
+private Map getSceneUpeMetadata(Map scenePlan) {
+    return [
+            upeRecordType: "link",
+            upeNetworkId: scenePlan.networkId,
+            upeLinkId: scenePlan.linkId,
+            upeLinkName: scenePlan.linkName
+    ]
+}
+
+private Map getDeviceUpeMetadata(Map devicePlan) {
+    return [
+            upeRecordType: "module",
+            upeNetworkId: devicePlan.networkId,
+            upeModuleId: devicePlan.moduleId,
+            upeChannelId: devicePlan.channelId,
+            upeDeviceKind: devicePlan.deviceKind,
+            upeDeviceKindName: devicePlan.deviceKindName,
+            upeManufacturerId: devicePlan.manufacturerId,
+            upeProductId: devicePlan.productId,
+            upeRoomName: devicePlan.roomName,
+            upeDeviceName: devicePlan.sourceDeviceName
+    ]
+}
+
+private void clearReceiveComponentSettings(childDevice) {
+    (1..16).each { slot ->
+        childDevice.updateSetting("receiveComponent${slot}", [type: "string", value: ""])
+    }
+}
+
+private void applyReceiveComponents(childDevice, Map devicePlan) {
+    clearReceiveComponentSettings(childDevice)
+    devicePlan.receiveComponents.each { receiveComponent ->
+        childDevice.updateReceiveComponentSlot(receiveComponent.slot, receiveComponent.linkId, receiveComponent.level)
+    }
+
+    def components = childDevice.getReceiveComponents()
+    childDevice.updateDataValue("receiveComponents", JsonOutput.toJson(components))
+}
+
+private void applyUpeSceneChildDevice(childDevice, Map scenePlan, String importTimestamp, boolean isNewChild) {
+    markUpeManagedChildDevice(childDevice, getSceneUpeMetadata(scenePlan), importTimestamp, isNewChild)
+    childDevice.updateNetworkId(scenePlan.networkId)
+    childDevice.updateLinkId(scenePlan.linkId)
+}
+
+private void applyUpeModuleChildDevice(childDevice, Map devicePlan, String importTimestamp, boolean isNewChild) {
+    markUpeManagedChildDevice(childDevice, getDeviceUpeMetadata(devicePlan), importTimestamp, isNewChild)
+    childDevice.updateNetworkId(devicePlan.networkId)
+    childDevice.updateDeviceId(devicePlan.moduleId)
+    childDevice.updateChannelId(devicePlan.channelId)
+    applyReceiveComponents(childDevice, devicePlan)
 }
 
 private boolean addPlannedDeviceNetworkId(Map plan, Map plannedDeviceNetworkIds, String deviceNetworkId, String description) {
@@ -197,6 +273,7 @@ private boolean addPlannedDeviceNetworkId(Map plan, Map plannedDeviceNetworkIds,
         return false
     }
     plannedDeviceNetworkIds[deviceNetworkId] = description
+    plan.desiredDeviceNetworkIds[deviceNetworkId] = true
     return true
 }
 
@@ -231,12 +308,17 @@ private void addPlannedReceiveComponent(Map plan, Map devicePlan, Map usedLinkId
     devicePlan.receiveComponents.add([slot: slot, linkId: linkId, level: level])
 }
 
+/*
+ * Build the desired UPE child-device state without changing Hubitat state.
+ * Errors added here stop the import before any sync action is applied.
+ */
 private Map buildBulkImportPlan(Map data) {
     def plan = [
             errors: [],
             scenes: [],
             devices: [],
-            skippedModules: []
+            skippedModules: [],
+            desiredDeviceNetworkIds: [:]
     ]
     def plannedDeviceNetworkIds = [:]
 
@@ -327,13 +409,80 @@ private Map buildBulkImportPlan(Map data) {
     return plan
 }
 
+/*
+ * Compare the desired UPE state with existing children without changing
+ * Hubitat state. Existing unmanaged children or driver mismatches are skipped
+ * per child so the rest of the import can continue.
+ */
+private void addBulkImportSyncAction(Map plan, Map childPlan, String driverName, List createPlans, List updatePlans) {
+    def existingDevice = getChildDevice(childPlan.deviceNetworkId)
+
+    if (!existingDevice) {
+        createPlans.add(childPlan)
+        return
+    }
+
+    if (!isUpeManagedChildDevice(existingDevice)) {
+        plan.skippedChildDevices.add([
+                deviceNetworkId: childPlan.deviceNetworkId,
+                reason: "conflicts with existing unmanaged child ${describeChildDevice(existingDevice)}"
+        ])
+        return
+    }
+
+    if (existingDevice.typeName != driverName) {
+        plan.skippedChildDevices.add([
+                deviceNetworkId: childPlan.deviceNetworkId,
+                reason: "exists as ${existingDevice.typeName}; UPE import expects ${driverName}. Driver replacement is not supported by sync import yet"
+        ])
+        return
+    }
+
+    updatePlans.add(childPlan)
+}
+
+private void addBulkImportSyncActions(Map plan) {
+    plan.createScenes = []
+    plan.updateScenes = []
+    plan.createDevices = []
+    plan.updateDevices = []
+    plan.deleteStaleDeviceNetworkIds = []
+    plan.skippedChildDevices = []
+
+    if (plan.errors) {
+        return
+    }
+
+    plan.scenes.each { scenePlan ->
+        addBulkImportSyncAction(plan, scenePlan, "UPB Scene Switch", plan.createScenes, plan.updateScenes)
+    }
+
+    plan.devices.each { devicePlan ->
+        addBulkImportSyncAction(plan, devicePlan, devicePlan.driverName, plan.createDevices, plan.updateDevices)
+    }
+
+    if (plan.errors) {
+        return
+    }
+
+    app.getChildDevices().each { childDevice ->
+        if (!isPimChildDevice(childDevice) &&
+                isUpeManagedChildDevice(childDevice) &&
+                !plan.desiredDeviceNetworkIds.containsKey(childDevice.deviceNetworkId)) {
+            plan.deleteStaleDeviceNetworkIds.add(childDevice.deviceNetworkId)
+        }
+    }
+}
+
 def bulkImport() {
     return dynamicPage(name: "bulkImport", title: "Device Import Results", install: false, uninstall: false, nextPage: "mainPage") {
         def importStarted = false
         try {
             def data = processUpeFile(settings.upeFileData)
             def plan = buildBulkImportPlan(data)
+            addBulkImportSyncActions(plan)
             def importTimestamp = getUpeImportTimestamp()
+
             section() {
                 if (plan.errors) {
                     paragraph "Import was not applied. Existing devices were not changed."
@@ -342,49 +491,45 @@ def bulkImport() {
                     }
                 } else {
                     importStarted = true
-                    deleteAllDevices()
 
-                    // Create Link Devices
-                    plan.scenes.each { scenePlan ->
-                        paragraph "Adding link device [${scenePlan.deviceNetworkId}] with scene name [${scenePlan.sceneName}]"
+                    /*
+                     * Apply sync actions in a conservative order: create
+                     * missing children, update matching managed children, then
+                     * delete stale managed children last.
+                     */
+                    plan.createScenes.each { scenePlan ->
+                        paragraph "Creating link device [${scenePlan.deviceNetworkId}] with scene name [${scenePlan.sceneName}]"
                         def childDevice = addChildDevice("UPBeat", "UPB Scene Switch", scenePlan.deviceNetworkId, [name: scenePlan.sceneName, label: scenePlan.sceneName])
-                        markUpeManagedChildDevice(childDevice, [
-                                upeRecordType: "link",
-                                upeNetworkId: scenePlan.networkId,
-                                upeLinkId: scenePlan.linkId,
-                                upeLinkName: scenePlan.linkName
-                        ], importTimestamp)
-                        childDevice.updateNetworkId(scenePlan.networkId)
-                        childDevice.updateLinkId(scenePlan.linkId)
+                        applyUpeSceneChildDevice(childDevice, scenePlan, importTimestamp, true)
                     }
 
-                    // Create Switch Devices
-                    plan.devices.each { devicePlan ->
-                        paragraph "Adding ${devicePlan.driverName.toLowerCase()} [${devicePlan.deviceNetworkId}] with device name [${devicePlan.deviceName}]"
+                    plan.createDevices.each { devicePlan ->
+                        paragraph "Creating ${devicePlan.driverName.toLowerCase()} [${devicePlan.deviceNetworkId}] with device name [${devicePlan.deviceName}]"
                         def childDevice = addChildDevice("UPBeat", devicePlan.driverName, devicePlan.deviceNetworkId, [name: devicePlan.deviceName, label: devicePlan.deviceName])
-                        markUpeManagedChildDevice(childDevice, [
-                                upeRecordType: "module",
-                                upeNetworkId: devicePlan.networkId,
-                                upeModuleId: devicePlan.moduleId,
-                                upeChannelId: devicePlan.channelId,
-                                upeDeviceKind: devicePlan.deviceKind,
-                                upeDeviceKindName: devicePlan.deviceKindName,
-                                upeManufacturerId: devicePlan.manufacturerId,
-                                upeProductId: devicePlan.productId,
-                                upeRoomName: devicePlan.roomName,
-                                upeDeviceName: devicePlan.sourceDeviceName
-                        ], importTimestamp)
-                        childDevice.updateNetworkId(devicePlan.networkId)
-                        childDevice.updateDeviceId(devicePlan.moduleId)
-                        childDevice.updateChannelId(devicePlan.channelId)
+                        applyUpeModuleChildDevice(childDevice, devicePlan, importTimestamp, true)
+                    }
 
-                        devicePlan.receiveComponents.each { receiveComponent ->
-                            paragraph "Adding preset to [${devicePlan.deviceNetworkId}] with device name [${devicePlan.deviceName}] at slot ${receiveComponent.slot}  ${receiveComponent.linkId}:${receiveComponent.level}"
-                            childDevice.updateReceiveComponentSlot(receiveComponent.slot, receiveComponent.linkId, receiveComponent.level)
-                        }
+                    plan.updateScenes.each { scenePlan ->
+                        paragraph "Updating link device [${scenePlan.deviceNetworkId}]"
+                        def childDevice = getChildDevice(scenePlan.deviceNetworkId)
+                        applyUpeSceneChildDevice(childDevice, scenePlan, importTimestamp, false)
+                    }
 
-                        def components = childDevice.getReceiveComponents()
-                        childDevice.updateDataValue("receiveComponents", JsonOutput.toJson(components))
+                    plan.updateDevices.each { devicePlan ->
+                        paragraph "Updating ${devicePlan.driverName.toLowerCase()} [${devicePlan.deviceNetworkId}]"
+                        def childDevice = getChildDevice(devicePlan.deviceNetworkId)
+                        applyUpeModuleChildDevice(childDevice, devicePlan, importTimestamp, false)
+                    }
+
+                    plan.deleteStaleDeviceNetworkIds.each { deviceNetworkId ->
+                        paragraph "Deleting stale UPE-managed child device [${deviceNetworkId}]"
+                        deleteChildDevice(deviceNetworkId)
+                    }
+
+                    plan.skippedChildDevices.each { skippedChildDevice ->
+                        def skippedMessage = "Skipped child device [${skippedChildDevice.deviceNetworkId}]: ${skippedChildDevice.reason}."
+                        logWarn(skippedMessage)
+                        paragraph skippedMessage
                     }
 
                     plan.skippedModules.each { skippedModule ->
@@ -394,7 +539,10 @@ def bulkImport() {
                         paragraph skippedMessage
                     }
 
-                    paragraph "Import completed successfully: ${plan.scenes.size()} scenes, ${plan.devices.size()} devices, ${plan.skippedModules.size()} unsupported modules skipped."
+                    def createdCount = plan.createScenes.size() + plan.createDevices.size()
+                    def updatedCount = plan.updateScenes.size() + plan.updateDevices.size()
+                    def deletedCount = plan.deleteStaleDeviceNetworkIds.size()
+                    paragraph "Import sync completed successfully: ${createdCount} created, ${updatedCount} updated, ${deletedCount} deleted, ${plan.skippedChildDevices.size()} child conflicts skipped, ${plan.skippedModules.size()} unsupported modules skipped."
                     app.removeSetting("upeFileData")
                 }
             }
