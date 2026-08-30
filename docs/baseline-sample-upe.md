@@ -43,8 +43,22 @@ Do not record or publish the network password from the UPE file.
 ## Current Import Expectations
 
 Bulk import builds and validates an import plan first. If the plan is valid, it
-deletes every non-PIM child device, then recreates supported devices from the
-parsed UPE data.
+synchronizes supported devices from the parsed UPE data.
+
+Sync behavior:
+
+- Create missing supported scene/device children.
+- Update existing `upeManaged=true` children when the DNI and driver type match.
+- Preserve existing child names and labels during updates.
+- Delete stale `upeManaged=true` children that are no longer present in the UPE
+  plan.
+- Never delete the PIM child.
+- Never delete unmanaged/manual children.
+- Skip a desired UPE child if its DNI already exists as an unmanaged child.
+- Skip a desired UPE child if its DNI already exists with a different driver
+  type.
+- Existing children without `upeManaged=true` are treated as unmanaged, including
+  children imported before UPE metadata marking was added.
 
 Expected children after importing `sample.upe`:
 
@@ -67,11 +81,17 @@ Bulk-import metadata expectations:
 
 - Imported scene and device children have `upeManaged=true`,
   `upeSource=bulkImport`, and `upeImportedAt` data values.
+- Re-importing updates existing managed children in place and sets
+  `upeUpdatedAt`.
 - Scene children have `upeRecordType=link`, `upeNetworkId`, `upeLinkId`, and
   `upeLinkName` data values.
 - Device children have `upeRecordType=module`, `upeNetworkId`, `upeModuleId`,
   `upeChannelId`, `upeDeviceKind`, `upeDeviceKindName`, `upeManufacturerId`,
   `upeProductId`, `upeRoomName`, and `upeDeviceName` data values.
+- On a clean hub, importing `sample.upe` should report `97 created`,
+  `0 updated`, `0 deleted`, and `0 child conflicts skipped`.
+- Re-importing `sample.upe` after those children are marked should report
+  `0 created`, `97 updated`, `0 deleted`, and `0 child conflicts skipped`.
 
 Receive-component expectations:
 
@@ -140,6 +160,12 @@ Run this checklist on a hub with the current code before and after any change.
 - Confirm the spot-check scene and device DNIs, names, and drivers match.
 - Confirm one imported scene and one imported device have the expected
   `upeManaged` and `upeImportedAt` data values.
+- Rename one imported child label, bulk import `sample.upe` again, and confirm
+  the custom label is preserved, `upeImportedAt` is preserved, and
+  `upeUpdatedAt` is present.
+- Change one imported child's driver type, bulk import `sample.upe` again, and
+  confirm that child is skipped while the rest of the import sync still
+  completes.
 - Confirm the spot-check receive-component slots match the table above.
 - Run `Refresh All Device States`; confirm dimmers/switches update without
   error statuses.

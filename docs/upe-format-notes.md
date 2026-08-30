@@ -150,8 +150,11 @@ are `upeManaged`, `upeSource`, and `upeImportedAt`.
 
 Scene children also store UPE link metadata. Device children also store UPE
 module/channel metadata, including kind, manufacturer, and product IDs.
-Future update-in-place sync can add `upeUpdatedAt` once imports update existing
-children instead of recreating them.
+Update-in-place sync preserves `upeImportedAt` and sets `upeUpdatedAt` whenever
+the importer updates an existing managed child. These are importer timestamps,
+not Hubitat platform created/modified timestamps and not user-edit timestamps.
+Sync skips desired UPE children whose DNIs conflict with unmanaged children or
+children using different drivers.
 
 ## Parser Notes And Remaining Gaps
 
