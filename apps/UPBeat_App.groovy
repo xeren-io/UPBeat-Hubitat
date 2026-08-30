@@ -7,6 +7,7 @@
 */
 import groovy.json.JsonBuilder
 import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
 import hubitat.helper.HexUtils
 import groovy.transform.Field
 import java.util.concurrent.ConcurrentHashMap
@@ -474,6 +475,69 @@ private void addBulkImportSyncActions(Map plan) {
     }
 }
 
+void clearLinkRouteIndex() {
+    logDebug("Clearing link route index")
+    state.remove("linkRouteIndex")
+}
+
+/*
+ * Link routing is a disposable cache derived from child device
+ * receiveComponents. The scene DNI is the route key because it already encodes
+ * network ID and link ID.
+ */
+private Map getLinkRouteIndex() {
+    if (state.linkRouteIndex == null) {
+        state.linkRouteIndex = buildLinkRouteIndex()
+    }
+    return state.linkRouteIndex ?: [:]
+}
+
+private void addLinkRoute(Map linkRouteIndex, String sceneDeviceNetworkId, String deviceNetworkId) {
+    if (!linkRouteIndex.containsKey(sceneDeviceNetworkId)) {
+        linkRouteIndex[sceneDeviceNetworkId] = []
+    }
+    if (!linkRouteIndex[sceneDeviceNetworkId].contains(deviceNetworkId)) {
+        linkRouteIndex[sceneDeviceNetworkId].add(deviceNetworkId)
+    }
+}
+
+private Map buildLinkRouteIndex() {
+    def linkRouteIndex = [:]
+    def indexedDevices = 0
+
+    app.getChildDevices().each { childDevice ->
+        if (!isPimChildDevice(childDevice) && !childDevice.typeName.contains("Scene")) {
+            def receiveComponentsJson = childDevice.getDataValue("receiveComponents")
+            if (receiveComponentsJson) {
+                try {
+                    def networkIdSetting = childDevice.getSetting("networkId")
+                    if (networkIdSetting == null) {
+                        logWarn("Cannot route link events for ${childDevice.deviceNetworkId}: missing networkId setting.")
+                    } else {
+                        def networkId = networkIdSetting.toInteger()
+                        def receiveComponents = new JsonSlurper().parseText(receiveComponentsJson)
+                        receiveComponents.each { linkIdKey, component ->
+                            try {
+                                def linkId = linkIdKey.toInteger()
+                                def sceneDeviceNetworkId = buildSceneNetworkId(networkId, linkId)
+                                addLinkRoute(linkRouteIndex, sceneDeviceNetworkId, childDevice.deviceNetworkId)
+                            } catch (Exception e) {
+                                logWarn("Cannot route link ${linkIdKey} for ${childDevice.deviceNetworkId}: ${e.message}")
+                            }
+                        }
+                        indexedDevices++
+                    }
+                } catch (Exception e) {
+                    logWarn("Cannot parse receiveComponents for ${childDevice.deviceNetworkId}: ${e.message}")
+                }
+            }
+        }
+    }
+
+    logDebug("Built link route index for ${linkRouteIndex.size()} links from ${indexedDevices} child devices.")
+    return linkRouteIndex
+}
+
 def bulkImport() {
     return dynamicPage(name: "bulkImport", title: "Device Import Results", install: false, uninstall: false, nextPage: "mainPage") {
         def importStarted = false
@@ -543,11 +607,15 @@ def bulkImport() {
                     def updatedCount = plan.updateScenes.size() + plan.updateDevices.size()
                     def deletedCount = plan.deleteStaleDeviceNetworkIds.size()
                     paragraph "Import sync completed successfully: ${createdCount} created, ${updatedCount} updated, ${deletedCount} deleted, ${plan.skippedChildDevices.size()} child conflicts skipped, ${plan.skippedModules.size()} unsupported modules skipped."
+                    clearLinkRouteIndex()
                     app.removeSetting("upeFileData")
                 }
             }
 
         } catch(Exception e) {
+            if (importStarted) {
+                clearLinkRouteIndex()
+            }
             section() {
                 paragraph "Import Error: ${e.message}"
                 if (!importStarted) {
@@ -641,6 +709,8 @@ def createDevice() {
             }
         }
     }
+
+    clearLinkRouteIndex()
 
     // Construct the device page URL using the device's numerical ID
     def deviceId = createdDevice.id
@@ -781,6 +851,7 @@ void updated() {
 def initialize() {
     logTrace("initialize()")
     getPimDevice()
+    clearLinkRouteIndex()
     // Clear existing subscriptions to prevent duplicates
     unsubscribe()
 }
@@ -844,6 +915,8 @@ void appButtonHandler(button) {
                 childDevice.updateChannelId(settings.channelId)
             }
 
+            clearLinkRouteIndex()
+
             // Clear the form settings
             app.removeSetting("deviceName")
             app.removeSetting("voiceName")
@@ -906,6 +979,7 @@ void deleteAllDevices() {
             deleteChildDevice(device.deviceNetworkId)
         }
     }
+    clearLinkRouteIndex()
 }
 
 def refreshAllDeviceStates() {
@@ -1229,6 +1303,7 @@ def updateDeviceSettings(device, settings) {
             logDebug("Updated deviceNetworkId to ${newDeviceNetworkId} for ${device.deviceNetworkId}")
         }
         logDebug("Updated device ${device.deviceNetworkId} settings")
+        clearLinkRouteIndex()
         return [success: true, error: null]
     } catch (Exception e) {
         logError("Failed to update device ${device.deviceNetworkId}: ${e.message}")
@@ -1237,6 +1312,7 @@ def updateDeviceSettings(device, settings) {
 }
 
 void addDevice(deviceInfo) {
+    def changed = false
     deviceInfo['ChannelInfo'].each { channelInfo ->
         // Generate a unique device id based on UPBeat / UPStart Data
         deviceNetworkId = buildDeviceNetworkId(deviceInfo.NetworkId, deviceInfo.ModuleId, channelInfo.ChannelId)
@@ -1259,6 +1335,7 @@ void addDevice(deviceInfo) {
                 // Let's request the device state in the future
                 device.sendEvent(name: "switch", value: "off", isStateChange: false)
                 skipEvent = true
+                changed = true
 
             } else {
                 logInfo("Device ${deviceNetworkId} already exists")
@@ -1267,31 +1344,56 @@ void addDevice(deviceInfo) {
             logInfo("Skipping ${deviceNetworkId} not enabled")
         }
     }
+    if (changed) {
+        clearLinkRouteIndex()
+    }
 }
 
 def handleLinkEvent(String eventSource, String eventType, int networkId, int sourceId, int linkId) {
     logTrace("handleLinkEvent(eventSource: ${eventSource}, eventType: ${eventType}, networkId: ${networkId}, sourceId: ${sourceId}, linkId: ${linkId})")
     def startTime = now()
     try {
-        // Enumerate all child devices, call handleLinkEvent if supported
-        def deviceCount = 0
         def processedCount = 0
-        getChildDevices().each { device ->
-            deviceCount++
-            if (device.name != "UPB Powerline Interface Module") {
+        def missingCount = 0
+        def sceneDeviceNetworkId = buildSceneNetworkId(networkId, linkId)
+        def routedDeviceNetworkIds = []
+
+        if (getChildDevice(sceneDeviceNetworkId)) {
+            routedDeviceNetworkIds.add(sceneDeviceNetworkId)
+        } else {
+            logDebug("No scene child found for ${sceneDeviceNetworkId}")
+        }
+
+        def linkRouteIndex = getLinkRouteIndex()
+        def linkedDeviceNetworkIds = linkRouteIndex[sceneDeviceNetworkId] ?: []
+        linkedDeviceNetworkIds.each { deviceNetworkId ->
+            if (!routedDeviceNetworkIds.contains(deviceNetworkId)) {
+                routedDeviceNetworkIds.add(deviceNetworkId)
+            }
+        }
+
+        routedDeviceNetworkIds.each { deviceNetworkId ->
+            def device = getChildDevice(deviceNetworkId)
+            if (device) {
                 try {
                     device.handleLinkEvent(eventSource, eventType, networkId, sourceId, linkId)
                     processedCount++
-                    logDebug("Dispatched handleLinkEvent(eventSource: ${eventSource}, eventType: ${eventType}, networkId: ${networkId}, sourceId: ${sourceId}, linkId: ${linkId}) on device ${device.label ?: device.name} (deviceId: ${device.getSetting('deviceId')})")
+                    logDebug("Dispatched handleLinkEvent(eventSource: ${eventSource}, eventType: ${eventType}, networkId: ${networkId}, sourceId: ${sourceId}, linkId: ${linkId}) on device ${device.label ?: device.name}")
                 } catch (Exception e) {
                     logWarn("Error calling handleLinkEvent on device ${device.label ?: device.name}: ${e.message}")
                 }
             } else {
-                logDebug("Skipped device ${device.label ?: device.name}: ${device.name == 'UPB Powerline Interface Module' ? 'PIM device' : 'lacks handleLinkEvent method'}")
+                missingCount++
+                logDebug("No routed child device found for ${deviceNetworkId}")
             }
         }
+
+        if (missingCount > 0) {
+            clearLinkRouteIndex()
+        }
+
         def elapsedTime = now() - startTime
-        logDebug("Processed link event for linkId ${linkId}: ${processedCount} of ${deviceCount} devices in ${elapsedTime}ms")
+        logDebug("Processed link event for linkId ${linkId}: ${processedCount} of ${routedDeviceNetworkIds.size()} routed devices in ${elapsedTime}ms")
     } catch (Exception e) {
         logWarn("Failed to process PIM link event: ${e.message}")
     }
