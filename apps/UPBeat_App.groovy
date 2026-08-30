@@ -176,6 +176,21 @@ private String describeUpeModule(Map module) {
     return "module ${module.moduleId ?: '?'}${name ? " (${name})" : ""}"
 }
 
+private String getUpeImportTimestamp() {
+    def timeZone = location?.timeZone ?: TimeZone.getTimeZone("UTC")
+    return new Date().format("yyyy-MM-dd'T'HH:mm:ssZ", timeZone)
+}
+
+private void markUpeManagedChildDevice(childDevice, Map metadata, String importTimestamp) {
+    childDevice.updateDataValue("upeManaged", "true")
+    childDevice.updateDataValue("upeSource", "bulkImport")
+    childDevice.updateDataValue("upeImportedAt", importTimestamp)
+
+    metadata.each { key, value ->
+        childDevice.updateDataValue(key.toString(), value == null ? "" : value.toString())
+    }
+}
+
 private boolean addPlannedDeviceNetworkId(Map plan, Map plannedDeviceNetworkIds, String deviceNetworkId, String description) {
     if (plannedDeviceNetworkIds.containsKey(deviceNetworkId)) {
         plan.errors.add("Duplicate child device network ID ${deviceNetworkId} for ${description}; already planned for ${plannedDeviceNetworkIds[deviceNetworkId]}.")
@@ -241,7 +256,8 @@ private Map buildBulkImportPlan(Map data) {
                         deviceNetworkId: deviceNetworkId,
                         sceneName: sceneName,
                         networkId: networkId,
-                        linkId: link.linkId
+                        linkId: link.linkId,
+                        linkName: link.name ?: ""
                 ])
             }
         } catch (IllegalArgumentException e) {
@@ -281,7 +297,12 @@ private Map buildBulkImportPlan(Map data) {
                                 networkId: module.networkId,
                                 moduleId: module.moduleId,
                                 channelId: channelId,
-                                zeroBasedChannelId: channel.channelId,
+                                deviceKind: module.deviceKind,
+                                deviceKindName: getUpeDeviceKindName(module.deviceKind),
+                                manufacturerId: module.manufacturerId,
+                                productId: module.productId,
+                                roomName: module.roomName ?: "",
+                                sourceDeviceName: module.deviceName ?: "",
                                 dimEnabled: dimEnabled,
                                 receiveComponents: []
                         ]
@@ -312,6 +333,7 @@ def bulkImport() {
         try {
             def data = processUpeFile(settings.upeFileData)
             def plan = buildBulkImportPlan(data)
+            def importTimestamp = getUpeImportTimestamp()
             section() {
                 if (plan.errors) {
                     paragraph "Import was not applied. Existing devices were not changed."
@@ -326,6 +348,12 @@ def bulkImport() {
                     plan.scenes.each { scenePlan ->
                         paragraph "Adding link device [${scenePlan.deviceNetworkId}] with scene name [${scenePlan.sceneName}]"
                         def childDevice = addChildDevice("UPBeat", "UPB Scene Switch", scenePlan.deviceNetworkId, [name: scenePlan.sceneName, label: scenePlan.sceneName])
+                        markUpeManagedChildDevice(childDevice, [
+                                upeRecordType: "link",
+                                upeNetworkId: scenePlan.networkId,
+                                upeLinkId: scenePlan.linkId,
+                                upeLinkName: scenePlan.linkName
+                        ], importTimestamp)
                         childDevice.updateNetworkId(scenePlan.networkId)
                         childDevice.updateLinkId(scenePlan.linkId)
                     }
@@ -334,6 +362,18 @@ def bulkImport() {
                     plan.devices.each { devicePlan ->
                         paragraph "Adding ${devicePlan.driverName.toLowerCase()} [${devicePlan.deviceNetworkId}] with device name [${devicePlan.deviceName}]"
                         def childDevice = addChildDevice("UPBeat", devicePlan.driverName, devicePlan.deviceNetworkId, [name: devicePlan.deviceName, label: devicePlan.deviceName])
+                        markUpeManagedChildDevice(childDevice, [
+                                upeRecordType: "module",
+                                upeNetworkId: devicePlan.networkId,
+                                upeModuleId: devicePlan.moduleId,
+                                upeChannelId: devicePlan.channelId,
+                                upeDeviceKind: devicePlan.deviceKind,
+                                upeDeviceKindName: devicePlan.deviceKindName,
+                                upeManufacturerId: devicePlan.manufacturerId,
+                                upeProductId: devicePlan.productId,
+                                upeRoomName: devicePlan.roomName,
+                                upeDeviceName: devicePlan.sourceDeviceName
+                        ], importTimestamp)
                         childDevice.updateNetworkId(devicePlan.networkId)
                         childDevice.updateDeviceId(devicePlan.moduleId)
                         childDevice.updateChannelId(devicePlan.channelId)

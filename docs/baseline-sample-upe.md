@@ -63,6 +63,16 @@ Generated DNI expectations:
   `CC` is the one-based channel ID in hex.
 - No duplicate scene or device DNIs were found in this sample.
 
+Bulk-import metadata expectations:
+
+- Imported scene and device children have `upeManaged=true`,
+  `upeSource=bulkImport`, and `upeImportedAt` data values.
+- Scene children have `upeRecordType=link`, `upeNetworkId`, `upeLinkId`, and
+  `upeLinkName` data values.
+- Device children have `upeRecordType=module`, `upeNetworkId`, `upeModuleId`,
+  `upeChannelId`, `upeDeviceKind`, `upeDeviceKindName`, `upeManufacturerId`,
+  `upeProductId`, `upeRoomName`, and `upeDeviceName` data values.
+
 Receive-component expectations:
 
 - 212 receive-component settings are expected to be populated from preset
@@ -128,6 +138,8 @@ Run this checklist on a hub with the current code before and after any change.
 - Bulk import `sample.upe`; confirm import completes without app errors.
 - Confirm the child device counts match the table above.
 - Confirm the spot-check scene and device DNIs, names, and drivers match.
+- Confirm one imported scene and one imported device have the expected
+  `upeManaged` and `upeImportedAt` data values.
 - Confirm the spot-check receive-component slots match the table above.
 - Run `Refresh All Device States`; confirm dimmers/switches update without
   error statuses.

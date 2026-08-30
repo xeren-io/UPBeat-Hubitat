@@ -142,6 +142,17 @@ added.
 - Current code skips this module because keypads are not supported child
   devices.
 
+## Import Metadata
+
+Bulk-imported children are marked with UPE data values so future sync logic can
+distinguish imported children from manually created children. The common fields
+are `upeManaged`, `upeSource`, and `upeImportedAt`.
+
+Scene children also store UPE link metadata. Device children also store UPE
+module/channel metadata, including kind, manufacturer, and product IDs.
+Future update-in-place sync can add `upeUpdatedAt` once imports update existing
+children instead of recreating them.
+
 ## Parser Notes And Remaining Gaps
 
 - `processUpeFile()` now stores ID fields in spec order: manufacturer first,
