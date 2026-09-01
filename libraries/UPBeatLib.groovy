@@ -14,6 +14,10 @@ library(
         importUrl: ""
 )
 
+/**
+ * Called by apps and drivers that need the Hubitat child DNI for a UPB module channel.
+ * Encodes network, unit, and channel into the stable UPBeat child deviceNetworkId format.
+ */
 def buildDeviceNetworkId(int networkId, int unitId, int channel) {
     logTrace("buildDeviceNetworkId(networkId=%d,unitId=%d,channel=%d)", networkId, unitId, channel)
     // Validate inputs (0-255 for each field)
@@ -29,11 +33,15 @@ def buildDeviceNetworkId(int networkId, int unitId, int channel) {
 
     String deviceNetworkId = String.format("UPBeat_%02X%02X%02X", networkId, unitId, channel)
 
-    logDebug("DeviceNetworkId: ${deviceNetworkId} (networkId=${networkId}, unitId=${unitId}, channel=${channel})")
+    logTrace("DeviceNetworkId: ${deviceNetworkId} (networkId=${networkId}, unitId=${unitId}, channel=${channel})")
 
     return deviceNetworkId
 }
 
+/**
+ * Called by apps that need the Hubitat child DNI for a UPB link/scene.
+ * Encodes network and link into the stable UPBeat scene child deviceNetworkId format.
+ */
 def buildSceneNetworkId(int networkId, int linkId) {
     logTrace("buildSceneNetworkId(networkId=%d,linkId=%d)", networkId, linkId)
     // Validate inputs (0-255 for each field)
@@ -46,7 +54,7 @@ def buildSceneNetworkId(int networkId, int linkId) {
 
     String sceneNetworkId = String.format("UPBeat_%02X%02X", networkId, linkId)
 
-    logDebug("SceneNetworkId: ${sceneNetworkId} (networkId=${networkId}, linkId=${linkId})")
+    logTrace("SceneNetworkId: ${sceneNetworkId} (networkId=${networkId}, linkId=${linkId})")
 
     return sceneNetworkId
 }
@@ -60,6 +68,10 @@ def buildSceneNetworkId(int networkId, int linkId) {
         '18': 3, '19': 3
 ]
 
+/**
+ * Called by processUpeFile() before UPE record interpretation.
+ * Parses the UPStart export CSV format without relying on platform CSV libraries.
+ */
 static List<List<String>> parse_csv(byte[] csvBytes) {
     def rows = []
     def currentRow = []
@@ -102,6 +114,10 @@ static List<List<String>> parse_csv(byte[] csvBytes) {
     return rows
 }
 
+/**
+ * Called by the UPBeat app bulk import page after a user pastes UPE file content.
+ * Converts supported UPStart export records into a map used by the app's sync planner.
+ */
 def processUpeFile(String userInput) {
     logDebug("processUpeFile()")
 

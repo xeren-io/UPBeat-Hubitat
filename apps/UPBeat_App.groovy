@@ -119,6 +119,10 @@ mappings {
 /***************************************************************************
  * Custom Application Configuration Pages
  ***************************************************************************/
+/**
+ * Called by Hubitat when the manual-add page is displayed.
+ * Builds the input form from DEVICE_TYPES so supported child drivers share one UI path.
+ */
 def addDevicePage() {
     dynamicPage(name: "addDevicePage", title: "Manually Add Device", install: false, uninstall: false, nextPage: "createDevice") {
         section("Create a New Device") {
@@ -141,6 +145,10 @@ def addDevicePage() {
     }
 }
 
+/**
+ * Called by Hubitat when the bulk-import page is displayed.
+ * Captures pasted UPStart UPE content for the sync page to process.
+ */
 def bulkImportPage() {
     dynamicPage(name: "bulkImportPage", title: "Bulk Import", install: false, uninstall: false, nextPage: "bulkImport") {
         section() {
@@ -157,32 +165,52 @@ def bulkImportPage() {
     }
 }
 
+/**
+ * Called by UPE import planning when a UPStart name needs to become a Hubitat label.
+ * Normalizes spacing/capitalization while preserving a fallback for blank UPE names.
+ */
 private String formatUpeDisplayName(String sourceName, String fallbackName) {
     def displayName = "${sourceName ?: ''}".trim().tokenize().collect { it.capitalize() }.join(' ')
     return displayName ?: fallbackName
 }
 
+/**
+ * Called by UPE import planning for each parsed module record.
+ * Keeps unsupported UPB device kinds out of Hubitat child-device creation.
+ */
 private boolean isSupportedUpeModule(Map module) {
     def deviceKindInfo = UPE_DEVICE_KINDS[module.deviceKind]
     return deviceKindInfo && deviceKindInfo.supported == true
 }
 
+/**
+ * Called by UPE import reporting and metadata writers.
+ * Converts the numeric UPStart device kind into a readable name for logs and child data.
+ */
 private String getUpeDeviceKindName(Integer deviceKind) {
     def deviceKindInfo = UPE_DEVICE_KINDS[deviceKind]
     return deviceKindInfo ? deviceKindInfo.name : "Unknown"
 }
 
+/**
+ * Called by UPE import validation messages.
+ * Produces a readable module identifier for errors without assuming every UPE field exists.
+ */
 private String describeUpeModule(Map module) {
     def name = "${module.roomName ?: ''} ${module.deviceName ?: ''}".trim()
     return "module ${module.moduleId ?: '?'}${name ? " (${name})" : ""}"
 }
 
+/**
+ * Called once per UPE import sync.
+ * Uses the hub location time zone when available so child import metadata is human-readable.
+ */
 private String getUpeImportTimestamp() {
     def timeZone = location?.timeZone ?: TimeZone.getTimeZone("UTC")
     return new Date().format("yyyy-MM-dd'T'HH:mm:ssZ", timeZone)
 }
 
-/*
+/**
  * UPE metadata marks child devices that bulk import is allowed to update or
  * delete during later syncs. User-facing names and labels are only set when a
  * child is created.
@@ -202,18 +230,34 @@ private void markUpeManagedChildDevice(childDevice, Map metadata, String importT
     }
 }
 
+/**
+ * Called before app code updates, deletes, or routes child devices.
+ * Identifies the managed PIM child so normal device operations do not touch it.
+ */
 private boolean isPimChildDevice(childDevice) {
     return childDevice.deviceNetworkId == pimDeviceId || childDevice.typeName == "UPB Powerline Interface Module"
 }
 
+/**
+ * Called by UPE sync planning before updating or deleting an existing child.
+ * Limits sync ownership to children previously created or marked by UPE import.
+ */
 private boolean isUpeManagedChildDevice(childDevice) {
     return childDevice.getDataValue("upeManaged") == "true"
 }
 
+/**
+ * Called by UPE conflict reporting.
+ * Produces a readable child description for logs and import result pages.
+ */
 private String describeChildDevice(childDevice) {
     return "${childDevice.label ?: childDevice.name ?: childDevice.deviceNetworkId} (${childDevice.typeName})"
 }
 
+/**
+ * Called when applying or updating a UPE link child.
+ * Builds the child data-value metadata that lets later imports recognize the same link.
+ */
 private Map getSceneUpeMetadata(Map scenePlan) {
     return [
             upeRecordType: "link",
@@ -223,6 +267,10 @@ private Map getSceneUpeMetadata(Map scenePlan) {
     ]
 }
 
+/**
+ * Called when applying or updating a UPE module channel child.
+ * Builds the child data-value metadata that lets later imports recognize the same module channel.
+ */
 private Map getDeviceUpeMetadata(Map devicePlan) {
     return [
             upeRecordType: "module",
@@ -238,12 +286,20 @@ private Map getDeviceUpeMetadata(Map devicePlan) {
     ]
 }
 
+/**
+ * Called before applying UPE receive components to a child driver.
+ * Clears all supported receive-component preference slots so stale links are removed.
+ */
 private void clearReceiveComponentSettings(childDevice) {
     (1..16).each { slot ->
         childDevice.updateSetting("receiveComponent${slot}", [type: "string", value: ""])
     }
 }
 
+/**
+ * Called by UPE module sync after network, module, and channel settings are applied.
+ * Writes both driver preference slots and the serialized data value used by link routing.
+ */
 private void applyReceiveComponents(childDevice, Map devicePlan) {
     clearReceiveComponentSettings(childDevice)
     devicePlan.receiveComponents.each { receiveComponent ->
@@ -254,12 +310,20 @@ private void applyReceiveComponents(childDevice, Map devicePlan) {
     childDevice.updateDataValue("receiveComponents", JsonOutput.toJson(components))
 }
 
+/**
+ * Called by UPE import sync for scene children.
+ * Applies network/link settings and UPE ownership metadata without changing user-facing labels on updates.
+ */
 private void applyUpeSceneChildDevice(childDevice, Map scenePlan, String importTimestamp, boolean isNewChild) {
     markUpeManagedChildDevice(childDevice, getSceneUpeMetadata(scenePlan), importTimestamp, isNewChild)
     childDevice.updateNetworkId(scenePlan.networkId)
     childDevice.updateLinkId(scenePlan.linkId)
 }
 
+/**
+ * Called by UPE import sync for switch/fan child devices.
+ * Applies addressing, receive components, and UPE ownership metadata for one module channel.
+ */
 private void applyUpeModuleChildDevice(childDevice, Map devicePlan, String importTimestamp, boolean isNewChild) {
     markUpeManagedChildDevice(childDevice, getDeviceUpeMetadata(devicePlan), importTimestamp, isNewChild)
     childDevice.updateNetworkId(devicePlan.networkId)
@@ -268,6 +332,10 @@ private void applyUpeModuleChildDevice(childDevice, Map devicePlan, String impor
     applyReceiveComponents(childDevice, devicePlan)
 }
 
+/**
+ * Called while building the UPE import plan.
+ * Detects duplicate desired child DNIs before any Hubitat child devices are changed.
+ */
 private boolean addPlannedDeviceNetworkId(Map plan, Map plannedDeviceNetworkIds, String deviceNetworkId, String description) {
     if (plannedDeviceNetworkIds.containsKey(deviceNetworkId)) {
         plan.errors.add("Duplicate child device network ID ${deviceNetworkId} for ${description}; already planned for ${plannedDeviceNetworkIds[deviceNetworkId]}.")
@@ -278,6 +346,10 @@ private boolean addPlannedDeviceNetworkId(Map plan, Map plannedDeviceNetworkIds,
     return true
 }
 
+/**
+ * Called while translating UPE preset records into child receive components.
+ * Validates slot, link, level, and duplicate-link constraints for one planned child device.
+ */
 private void addPlannedReceiveComponent(Map plan, Map devicePlan, Map usedLinkIds, Map preset, boolean dimEnabled) {
     def slot = preset.componentId + 1
     def linkId = preset.linkId
@@ -309,7 +381,7 @@ private void addPlannedReceiveComponent(Map plan, Map devicePlan, Map usedLinkId
     devicePlan.receiveComponents.add([slot: slot, linkId: linkId, level: level])
 }
 
-/*
+/**
  * Build the desired UPE child-device state without changing Hubitat state.
  * Errors added here stop the import before any sync action is applied.
  */
@@ -410,7 +482,7 @@ private Map buildBulkImportPlan(Map data) {
     return plan
 }
 
-/*
+/**
  * Compare the desired UPE state with existing children without changing
  * Hubitat state. Existing unmanaged children or driver mismatches are skipped
  * per child so the rest of the import can continue.
@@ -442,6 +514,10 @@ private void addBulkImportSyncAction(Map plan, Map childPlan, String driverName,
     updatePlans.add(childPlan)
 }
 
+/**
+ * Called after the desired UPE import plan is built.
+ * Separates planned children into create, update, delete, and skip lists before sync begins.
+ */
 private void addBulkImportSyncActions(Map plan) {
     plan.createScenes = []
     plan.updateScenes = []
@@ -475,69 +551,10 @@ private void addBulkImportSyncActions(Map plan) {
     }
 }
 
-void clearLinkRouteIndex() {
-    logDebug("Clearing link route index")
-    state.remove("linkRouteIndex")
-}
-
-/*
- * Link routing is a disposable cache derived from child device
- * receiveComponents. The scene DNI is the route key because it already encodes
- * network ID and link ID.
+/**
+ * Called by Hubitat after the bulk-import form is submitted.
+ * Parses the pasted UPE file, applies safe child create/update/delete actions, and reports skipped conflicts.
  */
-private Map getLinkRouteIndex() {
-    if (state.linkRouteIndex == null) {
-        state.linkRouteIndex = buildLinkRouteIndex()
-    }
-    return state.linkRouteIndex ?: [:]
-}
-
-private void addLinkRoute(Map linkRouteIndex, String sceneDeviceNetworkId, String deviceNetworkId) {
-    if (!linkRouteIndex.containsKey(sceneDeviceNetworkId)) {
-        linkRouteIndex[sceneDeviceNetworkId] = []
-    }
-    if (!linkRouteIndex[sceneDeviceNetworkId].contains(deviceNetworkId)) {
-        linkRouteIndex[sceneDeviceNetworkId].add(deviceNetworkId)
-    }
-}
-
-private Map buildLinkRouteIndex() {
-    def linkRouteIndex = [:]
-    def indexedDevices = 0
-
-    app.getChildDevices().each { childDevice ->
-        if (!isPimChildDevice(childDevice) && !childDevice.typeName.contains("Scene")) {
-            def receiveComponentsJson = childDevice.getDataValue("receiveComponents")
-            if (receiveComponentsJson) {
-                try {
-                    def networkIdSetting = childDevice.getSetting("networkId")
-                    if (networkIdSetting == null) {
-                        logWarn("Cannot route link events for ${childDevice.deviceNetworkId}: missing networkId setting.")
-                    } else {
-                        def networkId = networkIdSetting.toInteger()
-                        def receiveComponents = new JsonSlurper().parseText(receiveComponentsJson)
-                        receiveComponents.each { linkIdKey, component ->
-                            try {
-                                def linkId = linkIdKey.toInteger()
-                                def sceneDeviceNetworkId = buildSceneNetworkId(networkId, linkId)
-                                addLinkRoute(linkRouteIndex, sceneDeviceNetworkId, childDevice.deviceNetworkId)
-                            } catch (Exception e) {
-                                logWarn("Cannot route link ${linkIdKey} for ${childDevice.deviceNetworkId}: ${e.message}")
-                            }
-                        }
-                        indexedDevices++
-                    }
-                } catch (Exception e) {
-                    logWarn("Cannot parse receiveComponents for ${childDevice.deviceNetworkId}: ${e.message}")
-                }
-            }
-        }
-    }
-
-    logDebug("Built link route index for ${linkRouteIndex.size()} links from ${indexedDevices} child devices.")
-    return linkRouteIndex
-}
-
 def bulkImport() {
     return dynamicPage(name: "bulkImport", title: "Device Import Results", install: false, uninstall: false, nextPage: "mainPage") {
         def importStarted = false
@@ -628,6 +645,10 @@ def bulkImport() {
     }
 }
 
+/**
+ * Called by Hubitat after the manual-add form is submitted.
+ * Creates one child device, configures its required settings, and clears stale link routing.
+ */
 def createDevice() {
     logTrace("createDevice")
 
@@ -732,6 +753,10 @@ def createDevice() {
     }
 }
 
+/**
+ * Called by Hubitat when rendering the app configuration page.
+ * Shows installed-device tools, navigation to manual/UPE import pages, and app logging controls.
+ */
 def mainPage() {
     getHubUrl()
     dynamicPage(install: true, uninstall: true) {
@@ -833,21 +858,37 @@ def mainPage() {
 /***************************************************************************
  * Core App Functions
  ***************************************************************************/
+/**
+ * Called by Hubitat when the app instance is first installed.
+ * Delegates to initialize so first install and later updates share setup behavior.
+ */
 void installed() {
     logTrace("installed()")
     initialize()
 }
 
+/**
+ * Called by Hubitat when the app instance is removed.
+ * Clears app subscriptions before Hubitat removes the child app state.
+ */
 void uninstalled() {
     logTrace("uninstalled()")
     unsubscribe()
 }
 
+/**
+ * Called by Hubitat when app preferences are saved.
+ * Reinitializes the PIM child and clears derived routing state.
+ */
 void updated() {
     logTrace("updated()")
     initialize()
 }
 
+/**
+ * Called from installed() and updated().
+ * Ensures the PIM child exists and invalidates route cache state derived from child settings.
+ */
 def initialize() {
     logTrace("initialize()")
     getPimDevice()
@@ -859,6 +900,10 @@ def initialize() {
 /***************************************************************************
  * App Helper Functions
  ***************************************************************************/
+/**
+ * Called by older Hubitat button inputs still present in the app.
+ * Routes app-level button actions to manual child creation, refresh, or global log updates.
+ */
 void appButtonHandler(button) {
     logTrace("appButtonHandler(%s)", button)
     switch(button) {
@@ -935,6 +980,10 @@ void appButtonHandler(button) {
     }
 }
 
+/**
+ * Called whenever app code needs the PIM child.
+ * Creates the singleton PIM child on demand so command helpers can transmit UPB packets.
+ */
 def getPimDevice()
 {
     logTrace("getPimDevice()")
@@ -949,17 +998,29 @@ def getPimDevice()
     return pim
 }
 
+/**
+ * Called by the dormant configuration API helpers.
+ * Builds a local app endpoint URL with the Hubitat OAuth token appended.
+ */
 private String makeUri(String extraPath) {
     logTrace("makeUri()")
     return getFullLocalApiServerUrl() + extraPath + "?access_token=${state.accessToken}"
 }
 
+/**
+ * Called by the app page while rendering configuration details.
+ * Returns the local HTTPS hub URL from Hubitat's location metadata.
+ */
 String getHubUrl() {
     def localIP = location.hub.localIP
     def hubUrl = "https://${localIP}"
     return hubUrl
 }
 
+/**
+ * Called by the dormant /pim API endpoint.
+ * Updates the PIM child connection settings from an external configuration payload.
+ */
 void updatePIMDevice(String ipAddress, int portNumber) {
     logTrace("updatePIMDevice()")
     def pim = getPimDevice()
@@ -969,6 +1030,10 @@ void updatePIMDevice(String ipAddress, int portNumber) {
     device.updated()
 }
 
+/**
+ * Retained for reset/maintenance flows that need to remove child devices.
+ * Deletes all non-PIM children and clears link routing derived from those children.
+ */
 void deleteAllDevices() {
     logTrace("deleteAllDevices()")
     def devices = app.getChildDevices()
@@ -982,6 +1047,10 @@ void deleteAllDevices() {
     clearLinkRouteIndex()
 }
 
+/**
+ * Called by the app-level refresh button.
+ * Requests current state from each non-scene child device through its driver.
+ */
 def refreshAllDeviceStates() {
     logTrace("refreshAllDeviceStates()")
     def devices = app.getChildDevices()
@@ -993,6 +1062,10 @@ def refreshAllDeviceStates() {
     }
 }
 
+/**
+ * Called by the app-level global log setting button.
+ * Applies the selected log level preference to every child device.
+ */
 def setLogLevelGlobal() {
     logTrace("setLogLevelGlobal(${logLevelGlobal})")
     if (!LOG_LEVELS.containsKey(logLevelGlobal.toInteger())) {
@@ -1009,6 +1082,10 @@ def setLogLevelGlobal() {
 /***************************************************************************
  * Web Service Handlers for Configuration Application
  ***************************************************************************/
+/**
+ * Called by Hubitat for GET /status.
+ * Returns a simple JSON health response for the unfinished external configuration API.
+ */
 void handleStatus() {
     logTrace("handleStatus()")
 
@@ -1022,6 +1099,10 @@ void handleStatus() {
     render contentType: "application/json", data: json, status: 200
 }
 
+/**
+ * Called by Hubitat for POST /device.
+ * Accepts the legacy external configuration payload and forwards DeviceInfo to addDevice().
+ */
 void handleAddDevice() {
     logTrace("handleAddDevice()")
 
@@ -1045,6 +1126,10 @@ void handleAddDevice() {
     }
 }
 
+/**
+ * Called by Hubitat for POST /scene.
+ * Keeps the legacy external configuration endpoint shape, although scene creation is not implemented here.
+ */
 void handleAddScene() {
     logTrace("handleAddScene()")
 
@@ -1067,6 +1152,10 @@ void handleAddScene() {
     }
 }
 
+/**
+ * Called by Hubitat for POST /pim.
+ * Applies legacy external configuration data to the PIM child connection settings.
+ */
 void handleUpdatePowerlineInterface() {
     logTrace("handleUpdatePowerlineInterface()")
 
@@ -1094,6 +1183,10 @@ void handleUpdatePowerlineInterface() {
 /***************************************************************************
  * Custom App Functions
  ***************************************************************************/
+/**
+ * Called by scene child drivers when a scene is turned on in Hubitat.
+ * Sends a UPB Activate Link command through the PIM and returns the transmit result to the driver.
+ */
 def activateScene(Integer networkId, Integer linkId, Integer sourceId) {
     logTrace("activateScene(networkId=0x%02X, linkId=0x%02X, sourceId=0x%02X)", networkId, linkId, sourceId)
 
@@ -1123,6 +1216,10 @@ def activateScene(Integer networkId, Integer linkId, Integer sourceId) {
     return result
 }
 
+/**
+ * Called by scene child drivers when a scene is turned off in Hubitat.
+ * Sends a UPB Deactivate Link command through the PIM and returns the transmit result to the driver.
+ */
 def deactivateScene(Integer networkId, Integer linkId, Integer sourceId) {
     logTrace("deactivateScene(networkId=0x%02X, linkId=0x%02X, sourceId=0x%02X)", networkId, linkId, sourceId)
 
@@ -1152,6 +1249,10 @@ def deactivateScene(Integer networkId, Integer linkId, Integer sourceId) {
     return result
 }
 
+/**
+ * Called by dimmer, switch, and fan child drivers for direct level/speed/switch commands.
+ * Sends a UPB Goto command through the PIM after validating the target address and level.
+ */
 def gotoLevel(Integer networkId, Integer deviceId, Integer sourceId, Integer level, Integer duration, Integer channel) {
     logTrace("gotoLevel(networkId=0x%02X, deviceId=0x%02X, sourceId=0x%02X, level=%d, duration=%d, channel=%d)",
             networkId, deviceId, sourceId, level, duration, channel)
@@ -1194,8 +1295,12 @@ def gotoLevel(Integer networkId, Integer deviceId, Integer sourceId, Integer lev
     return result
 }
 
+/**
+ * Called by child drivers or future app controls that need a UPB blink command.
+ * Sends the direct UPB Blink command through the PIM after validating the target address.
+ */
 def blink(Integer networkId, Integer deviceId, Integer sourceId, Integer rate, Integer channel) {
-    logTrace("gotoLevel(networkId=0x%02X, deviceId=0x%02X, sourceId=0x%02X, rate=%d, channel=%d)",
+    logTrace("blink(networkId=0x%02X, deviceId=0x%02X, sourceId=0x%02X, rate=%d, channel=%d)",
             networkId, deviceId, sourceId, rate, channel)
 
     // Validate inputs
@@ -1221,7 +1326,7 @@ def blink(Integer networkId, Integer deviceId, Integer sourceId, Integer rate, I
     }
 
     def controlWord = encodeControlWord(LNK_DIRECT, REPRQ_NONE, ACKRQ_PULSE, TX_CNT_TWO, TX_SEQ_FIRST)
-    logDebug("Setting level with controlWord=0x%04X", controlWord)
+    logDebug("Blinking device with controlWord=0x%04X", controlWord)
     def result = pimDevice.transmitMessage(controlWord, (byte) networkId, (byte) deviceId, (byte) sourceId, UPB_BLINK, [(byte) rate, (byte) channel] as byte[])
 
     if (result.result) {
@@ -1232,6 +1337,10 @@ def blink(Integer networkId, Integer deviceId, Integer sourceId, Integer rate, I
     return result
 }
 
+/**
+ * Called by child drivers when their refresh command runs.
+ * Sends a UPB Report State request through the PIM for the addressed module.
+ */
 def requestDeviceState(Integer networkId, Integer deviceId, Integer sourceId) {
     logTrace("requestDeviceState(networkId=0x%02X, deviceId=0x%02X, sourceId=0x%02X)", networkId, deviceId, sourceId)
 
@@ -1264,6 +1373,10 @@ def requestDeviceState(Integer networkId, Integer deviceId, Integer sourceId) {
 /***************************************************************************
  * Custom App Functions
  ***************************************************************************/
+/**
+ * Called by child drivers from updated() after their preferences are saved.
+ * Rebuilds the child DNI from address settings and clears derived link routing.
+ */
 def updateDeviceSettings(device, settings) {
     logTrace("updateDeviceSettings(${device.deviceNetworkId})")
     if (!settings) {
@@ -1311,6 +1424,10 @@ def updateDeviceSettings(device, settings) {
     }
 }
 
+/**
+ * Called by the legacy /device configuration API.
+ * Creates switch children from the older DeviceInfo payload shape.
+ */
 void addDevice(deviceInfo) {
     def changed = false
     deviceInfo['ChannelInfo'].each { channelInfo ->
@@ -1349,28 +1466,120 @@ void addDevice(deviceInfo) {
     }
 }
 
+/***************************************************************************
+ * Link Event Routing
+ ***************************************************************************/
+/**
+ * Called after any child add, delete, import, or settings update that may affect link routing.
+ * Removes the derived route cache so the next link event rebuilds it from child data.
+ */
+void clearLinkRouteIndex() {
+    logDebug("Clearing link route index")
+    state.remove("linkRouteIndex")
+}
+
+/**
+ * Link routing is a disposable cache derived from child device
+ * receiveComponents. The scene DNI is the route key because it already encodes
+ * network ID and link ID.
+ */
+private Map getLinkRouteIndex() {
+    if (state.linkRouteIndex == null) {
+        state.linkRouteIndex = buildLinkRouteIndex()
+    }
+    return state.linkRouteIndex ?: [:]
+}
+
+/**
+ * Called only while rebuilding the link route cache.
+ * Adds one device DNI to the route list for a scene DNI without duplicating entries.
+ */
+private void addLinkRoute(Map linkRouteIndex, String sceneDeviceNetworkId, String deviceNetworkId) {
+    if (!linkRouteIndex.containsKey(sceneDeviceNetworkId)) {
+        linkRouteIndex[sceneDeviceNetworkId] = []
+    }
+    if (!linkRouteIndex[sceneDeviceNetworkId].contains(deviceNetworkId)) {
+        linkRouteIndex[sceneDeviceNetworkId].add(deviceNetworkId)
+    }
+}
+
+/**
+ * Called lazily by getLinkRouteIndex() after the cache has been cleared or is missing.
+ * Scans child receiveComponents data values and builds scene-DNI to device-DNI routes.
+ */
+private Map buildLinkRouteIndex() {
+    def linkRouteIndex = [:]
+    def indexedDevices = 0
+
+    app.getChildDevices().each { childDevice ->
+        if (!isPimChildDevice(childDevice) && !childDevice.typeName.contains("Scene")) {
+            def receiveComponentsJson = childDevice.getDataValue("receiveComponents")
+            if (receiveComponentsJson) {
+                try {
+                    def networkIdSetting = childDevice.getSetting("networkId")
+                    if (networkIdSetting == null) {
+                        logWarn("Cannot route link events for ${childDevice.deviceNetworkId}: missing networkId setting.")
+                    } else {
+                        def networkId = networkIdSetting.toInteger()
+                        def receiveComponents = new JsonSlurper().parseText(receiveComponentsJson)
+                        receiveComponents.each { linkIdKey, component ->
+                            try {
+                                def linkId = linkIdKey.toInteger()
+                                def sceneDeviceNetworkId = buildSceneNetworkId(networkId, linkId)
+                                addLinkRoute(linkRouteIndex, sceneDeviceNetworkId, childDevice.deviceNetworkId)
+                            } catch (Exception e) {
+                                logWarn("Cannot route link ${linkIdKey} for ${childDevice.deviceNetworkId}: ${e.message}")
+                            }
+                        }
+                        indexedDevices++
+                    }
+                } catch (Exception e) {
+                    logWarn("Cannot parse receiveComponents for ${childDevice.deviceNetworkId}: ${e.message}")
+                }
+            }
+        }
+    }
+
+    logDebug("Built link route index for ${linkRouteIndex.size()} links from ${indexedDevices} child devices.")
+    return linkRouteIndex
+}
+
+/**
+ * Called by handleLinkEvent() for each incoming or user-generated link event.
+ * Returns the scene child first, then devices subscribed to that scene through receiveComponents.
+ */
+private List getRoutedLinkDeviceNetworkIds(int networkId, int linkId) {
+    def sceneDeviceNetworkId = buildSceneNetworkId(networkId, linkId)
+    def routedDeviceNetworkIds = []
+
+    if (getChildDevice(sceneDeviceNetworkId)) {
+        routedDeviceNetworkIds.add(sceneDeviceNetworkId)
+    } else {
+        logDebug("No scene child found for ${sceneDeviceNetworkId}")
+    }
+
+    def linkRouteIndex = getLinkRouteIndex()
+    def linkedDeviceNetworkIds = linkRouteIndex[sceneDeviceNetworkId] ?: []
+    linkedDeviceNetworkIds.each { deviceNetworkId ->
+        if (!routedDeviceNetworkIds.contains(deviceNetworkId)) {
+            routedDeviceNetworkIds.add(deviceNetworkId)
+        }
+    }
+
+    return routedDeviceNetworkIds
+}
+
+/**
+ * Called by the PIM child when a UPB link packet is observed and by scene children after local activation.
+ * Dispatches the event only to the matching scene child and devices indexed for that link.
+ */
 def handleLinkEvent(String eventSource, String eventType, int networkId, int sourceId, int linkId) {
     logTrace("handleLinkEvent(eventSource: ${eventSource}, eventType: ${eventType}, networkId: ${networkId}, sourceId: ${sourceId}, linkId: ${linkId})")
     def startTime = now()
     try {
         def processedCount = 0
         def missingCount = 0
-        def sceneDeviceNetworkId = buildSceneNetworkId(networkId, linkId)
-        def routedDeviceNetworkIds = []
-
-        if (getChildDevice(sceneDeviceNetworkId)) {
-            routedDeviceNetworkIds.add(sceneDeviceNetworkId)
-        } else {
-            logDebug("No scene child found for ${sceneDeviceNetworkId}")
-        }
-
-        def linkRouteIndex = getLinkRouteIndex()
-        def linkedDeviceNetworkIds = linkRouteIndex[sceneDeviceNetworkId] ?: []
-        linkedDeviceNetworkIds.each { deviceNetworkId ->
-            if (!routedDeviceNetworkIds.contains(deviceNetworkId)) {
-                routedDeviceNetworkIds.add(deviceNetworkId)
-            }
-        }
+        def routedDeviceNetworkIds = getRoutedLinkDeviceNetworkIds(networkId, linkId)
 
         routedDeviceNetworkIds.each { deviceNetworkId ->
             def device = getChildDevice(deviceNetworkId)
@@ -1399,6 +1608,10 @@ def handleLinkEvent(String eventSource, String eventType, int networkId, int sou
     }
 }
 
+/**
+ * Called by the PIM child when a direct UPB device packet or report is observed.
+ * Routes direct events to the addressed child device without using the noisy link-event index.
+ */
 def handleDeviceEvent(String eventSource, String eventType, int networkId, int sourceId, int destinationId, int[] messageArgs) {
     logTrace("handleDeviceEvent(eventSource: ${eventSource}, eventType: ${eventType}, networkId: ${networkId}, sourceId: ${sourceId}, destinationId: ${destinationId}, messageArgs: ${messageArgs})")
     switch(eventType){
