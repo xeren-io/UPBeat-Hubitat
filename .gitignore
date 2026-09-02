@@ -2,3 +2,8 @@ experimental/
 .qodo
 .idea/
 *.iml
+
+# Local reference files used during development; not part of the Hubitat package.
+docs/
+*.pdf
+*.upe
