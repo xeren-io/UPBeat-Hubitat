@@ -1,7 +1,7 @@
 /*
  * Hubitat Driver: UPB Multi-Speed Fan
  * Description: Universal Powerline Bus UPB Multi-Speed Fan Driver (Supports multiple speeds: off, low, medium, high)
- * Copyright: 2025 UPBeat Automation
+ * Copyright: 2026 UPBeat Automation
  * Licensed: Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License
  * Author: UPBeat Automation
  */

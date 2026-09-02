@@ -1,7 +1,7 @@
 /*
  * Hubitat Driver: UPB Single-Speed Fan
  * Description: Universal Powerline Bus UPB Single-Speed Fan Driver (On/Off only)
- * Copyright: 2025 UPBeat Automation
+ * Copyright: 2026 UPBeat Automation
  * Licensed: Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License
  * Author: UPBeat Automation
  */

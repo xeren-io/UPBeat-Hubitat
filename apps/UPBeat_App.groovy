@@ -1,7 +1,7 @@
 /*
 * Hubitat App: UPBeat App
 * Description: Hubitat App for Univeral Powerline Bus Support
-* Copyright: 2025 UPBeat Automation
+* Copyright: 2026 UPBeat Automation
 * Licensed: Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License
 * Author: UPBeat Automation
 */

@@ -200,8 +200,10 @@ Multi-channel devices are represented as one Hubitat child per real UPB channel.
 We hope to grow device support with the help of the community and other developers. 
 
 ## License
-This code is licensed under the [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License](http://creativecommons.org/licenses/by-nc-sa/4.0/).  
-Copyright (c) 2025 UPBeat Automation.  
+This code is licensed under the [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License](http://creativecommons.org/licenses/by-nc-sa/4.0/).
+
+Copyright (c) 2026 UPBeat Automation.
+
 You may use, modify, and share this code for non-commercial purposes, provided you credit UPBeat Automation and distribute derivatives under the same license. Selling this code or its derivatives is prohibited.
 
 ## Contributing
