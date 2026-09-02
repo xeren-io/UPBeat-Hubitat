@@ -47,6 +47,52 @@ private boolean isValidIntegerSetting(value, int minValue, int maxValue) {
     }
 }
 
+/**
+ * Sends a capability event only when the attribute value actually changes.
+ * This prevents duplicate UPB link/report observations from creating large
+ * bursts of unchanged Hubitat events for cloud integrations such as Alexa.
+ */
+private void sendEventIfChanged(String eventName, eventValue) {
+    sendEventIfChanged(eventName, eventValue, [:])
+}
+
+/**
+ * Sends a capability event only when the attribute value actually changes.
+ * Additional event options, such as unit, are copied onto the generated event.
+ */
+private void sendEventIfChanged(String eventName, eventValue, Map eventOptions) {
+    def currentValue = device.currentValue(eventName)
+    if (areEventValuesEqual(currentValue, eventValue)) {
+        logTrace("[${device.deviceNetworkId}] ${eventName} is already ${eventValue}; skipping duplicate event.")
+        return
+    }
+
+    def eventData = [name: eventName, value: eventValue, isStateChange: true]
+    if (eventOptions) {
+        eventData.putAll(eventOptions)
+    }
+    sendEvent(eventData)
+}
+
+/**
+ * Compares Hubitat currentValue output with a new event value.
+ * Numeric values are compared numerically when Hubitat returns Number instances.
+ */
+private boolean areEventValuesEqual(currentValue, newValue) {
+    if (currentValue == null && newValue == null) {
+        return true
+    }
+    if (currentValue == null || newValue == null) {
+        return false
+    }
+
+    if (currentValue instanceof Number && newValue instanceof Number) {
+        return currentValue.doubleValue() == newValue.doubleValue()
+    }
+
+    return currentValue.toString() == newValue.toString()
+}
+
 def getReceiveComponents() {
     def components = [:]
     def hasErrors = false

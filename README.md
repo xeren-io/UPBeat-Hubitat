@@ -152,9 +152,9 @@ sudo service ser2net start
 
    ![image](https://github.com/user-attachments/assets/6ba492c0-0c04-4865-8f7e-fce7e7641d03)
 
-   Supported Switch and Module records are created or updated. Unsupported device kinds, conflicting child devices, and driver mismatches are skipped and reported.
+   Supported Switch and Module records are created, adopted, or updated. Unsupported device kinds, conflicting child devices, and driver mismatches are skipped and reported.
 
-   UPE sync is conservative. It updates UPE-managed child settings, removes stale UPE-managed children that are no longer present in the UPE file, and does not replace the driver on an existing child device. Existing Hubitat device labels are preserved during sync updates.
+   UPE sync is conservative. It updates UPE-managed child settings, removes stale UPE-managed children that are no longer present in the UPE file, and does not replace the driver on an existing child device. The Adopt Existing Matching Child Devices option is enabled by default and can mark existing unmanaged children as UPE-managed when their device network ID, driver, and address settings match the UPE import. Existing Hubitat device labels are preserved during sync updates.
 
    ![image](https://github.com/user-attachments/assets/616afa43-5e8e-46a7-98ed-12c7ac099878)
 
@@ -171,6 +171,8 @@ The primary drivers needed for most UPB deployments are `UPB Scene Switch`, `UPB
 Additional drivers are included for `UPB Single-Speed Fan`, `UPB Multi-Speed Fan`, and `UPB Scene Actuator`.
 
 The fan drivers expose Hubitat's FanControl capability by translating fan speeds to UPB dimmer levels. The scene actuator exposes activate/deactivate commands for link control. Voice assistant behavior depends on how each assistant maps Hubitat capabilities.
+
+Load and fan drivers suppress duplicate unchanged capability events to reduce cloud-integration chatter. Large scenes that genuinely change many devices will still create valid Hubitat state events for each changed child device.
 
 UPE-managed child devices can still be edited in Hubitat, but sync import will skip a child if its current driver does not match the driver expected by the UPE import plan.
 

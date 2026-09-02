@@ -95,8 +95,8 @@ private Map normalizeFanLevel(int level, String caller) {
     }
 
     logDebug("[${device.deviceNetworkId}] %s: Received normalized level=%d, updating switch=%s, speed=%s.", caller, level, switchValue, speed)
-    sendEvent(name: "switch", value: switchValue, isStateChange: true)
-    sendEvent(name: "speed", value: speed, isStateChange: true)
+    sendEventIfChanged("switch", switchValue)
+    sendEventIfChanged("speed", speed)
     return [result: true]
 }
 
@@ -398,8 +398,8 @@ def setSpeed(String speed) {
     if (result.result) {
         logInfo("[${device.deviceNetworkId}] setSpeed: Command succeeded: switch=%s, speed=%s.", speed == "off" ? "off" : "on", speed)
         def switchValue = (speed == "off") ? "off" : "on"
-        sendEvent(name: "switch", value: switchValue, isStateChange: true)
-        sendEvent(name: "speed", value: speed, isStateChange: true)
+        sendEventIfChanged("switch", switchValue)
+        sendEventIfChanged("speed", speed)
         sendEvent(name: "status", value: "ok", isStateChange: false)
     } else {
         logError("[${device.deviceNetworkId}] setSpeed: Command failed: %s.", result.reason)
@@ -442,8 +442,8 @@ def handleLinkEvent(String eventSource, String eventType, int networkId, int sou
                     break
                 case "UPB_DEACTIVATE_LINK":
                     logInfo("[${device.deviceNetworkId}] handleLinkEvent: Processing UPB_DEACTIVATE_LINK, setting switch=off, speed=off.")
-                    sendEvent(name: "switch", value: "off", isStateChange: true)
-                    sendEvent(name: "speed", value: "off", isStateChange: true)
+                    sendEventIfChanged("switch", "off")
+                    sendEventIfChanged("speed", "off")
                     break
                 default:
                     logError("[${device.deviceNetworkId}] handleLinkEvent: Unknown event type: %s.", eventType)

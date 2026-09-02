@@ -161,6 +161,13 @@ def bulkImportPage() {
                     rows: 20,
                     cols: 80,
                     submitOnChange: false
+            input name: "adoptMatchingUnmanagedChildren",
+                    type: "bool",
+                    title: "Adopt Existing Matching Child Devices",
+                    description: "Mark existing unmanaged children as UPE-managed when their device network ID, driver, and address settings match the UPE import.",
+                    defaultValue: true,
+                    required: false,
+                    submitOnChange: false
         }
     }
 }
@@ -247,11 +254,78 @@ private boolean isUpeManagedChildDevice(childDevice) {
 }
 
 /**
+ * Called by UPE import planning.
+ * Defaults adoption on, while accepting either boolean or string false from Hubitat settings.
+ */
+private boolean isUpeAdoptionEnabled() {
+    if (settings.adoptMatchingUnmanagedChildren == null) {
+        return true
+    }
+
+    return settings.adoptMatchingUnmanagedChildren.toString().toLowerCase() != "false"
+}
+
+/**
+ * Called by UPE adoption checks when comparing existing child preferences.
+ * Converts Hubitat number/string settings without Groovy truth checks so zero remains valid.
+ */
+private Integer getIntegerPreferenceValue(value) {
+    if (value == null) {
+        return null
+    }
+
+    try {
+        if (value instanceof Number) {
+            return value.intValue()
+        }
+
+        String valueText = value.toString().trim()
+        if (valueText.length() == 0) {
+            return null
+        }
+        return valueText.toInteger()
+    } catch (Exception e) {
+        return null
+    }
+}
+
+/**
  * Called by UPE conflict reporting.
  * Produces a readable child description for logs and import result pages.
  */
 private String describeChildDevice(childDevice) {
     return "${childDevice.label ?: childDevice.name ?: childDevice.deviceNetworkId} (${childDevice.typeName})"
+}
+
+/**
+ * Called by UPE adoption checks for old imports that predate the upeManaged marker.
+ * Returns address-setting differences that must prevent automatic adoption.
+ */
+private List getUpeAdoptionAddressMismatches(childDevice, Map childPlan) {
+    def mismatches = []
+
+    compareUpeAdoptionAddressSetting(mismatches, childDevice, "networkId", childPlan.networkId)
+    if (childPlan.containsKey("linkId")) {
+        compareUpeAdoptionAddressSetting(mismatches, childDevice, "linkId", childPlan.linkId)
+    } else {
+        compareUpeAdoptionAddressSetting(mismatches, childDevice, "deviceId", childPlan.moduleId)
+        compareUpeAdoptionAddressSetting(mismatches, childDevice, "channelId", childPlan.channelId)
+    }
+
+    return mismatches
+}
+
+/**
+ * Called by getUpeAdoptionAddressMismatches().
+ * Adds a human-readable mismatch when an existing child setting is missing or differs from UPE.
+ */
+private void compareUpeAdoptionAddressSetting(List mismatches, childDevice, String settingName, expectedValue) {
+    def actualValue = getIntegerPreferenceValue(childDevice.getSetting(settingName))
+    if (actualValue == null) {
+        mismatches.add("${settingName} is missing")
+    } else if (actualValue != expectedValue) {
+        mismatches.add("${settingName}=${actualValue}, expected ${expectedValue}")
+    }
 }
 
 /**
@@ -483,11 +557,11 @@ private Map buildBulkImportPlan(Map data) {
 }
 
 /**
- * Compare the desired UPE state with existing children without changing
- * Hubitat state. Existing unmanaged children or driver mismatches are skipped
- * per child so the rest of the import can continue.
+ * Compare the desired UPE state with existing children without changing Hubitat state.
+ * Matching unmanaged children can be adopted to support upgrades from old UPE imports.
+ * Remaining unmanaged children or driver mismatches are skipped per child.
  */
-private void addBulkImportSyncAction(Map plan, Map childPlan, String driverName, List createPlans, List updatePlans) {
+private void addBulkImportSyncAction(Map plan, Map childPlan, String driverName, List createPlans, List adoptPlans, List updatePlans, boolean adoptionEnabled) {
     def existingDevice = getChildDevice(childPlan.deviceNetworkId)
 
     if (!existingDevice) {
@@ -495,18 +569,27 @@ private void addBulkImportSyncAction(Map plan, Map childPlan, String driverName,
         return
     }
 
-    if (!isUpeManagedChildDevice(existingDevice)) {
-        plan.skippedChildDevices.add([
-                deviceNetworkId: childPlan.deviceNetworkId,
-                reason: "conflicts with existing unmanaged child ${describeChildDevice(existingDevice)}"
-        ])
-        return
-    }
-
     if (existingDevice.typeName != driverName) {
         plan.skippedChildDevices.add([
                 deviceNetworkId: childPlan.deviceNetworkId,
                 reason: "exists as ${existingDevice.typeName}; UPE import expects ${driverName}. Driver replacement is not supported by sync import yet"
+        ])
+        return
+    }
+
+    if (!isUpeManagedChildDevice(existingDevice)) {
+        def adoptionMismatches = getUpeAdoptionAddressMismatches(existingDevice, childPlan)
+        if (adoptionEnabled && adoptionMismatches.size() == 0) {
+            adoptPlans.add(childPlan)
+            return
+        }
+
+        def adoptionReason = adoptionEnabled ?
+                "address settings do not match the UPE import (${adoptionMismatches.join(', ')})" :
+                "adoption of existing matching child devices is disabled"
+        plan.skippedChildDevices.add([
+                deviceNetworkId: childPlan.deviceNetworkId,
+                reason: "conflicts with existing unmanaged child ${describeChildDevice(existingDevice)}; ${adoptionReason}"
         ])
         return
     }
@@ -520,8 +603,10 @@ private void addBulkImportSyncAction(Map plan, Map childPlan, String driverName,
  */
 private void addBulkImportSyncActions(Map plan) {
     plan.createScenes = []
+    plan.adoptScenes = []
     plan.updateScenes = []
     plan.createDevices = []
+    plan.adoptDevices = []
     plan.updateDevices = []
     plan.deleteStaleDeviceNetworkIds = []
     plan.skippedChildDevices = []
@@ -530,12 +615,14 @@ private void addBulkImportSyncActions(Map plan) {
         return
     }
 
+    def adoptionEnabled = isUpeAdoptionEnabled()
+
     plan.scenes.each { scenePlan ->
-        addBulkImportSyncAction(plan, scenePlan, "UPB Scene Switch", plan.createScenes, plan.updateScenes)
+        addBulkImportSyncAction(plan, scenePlan, "UPB Scene Switch", plan.createScenes, plan.adoptScenes, plan.updateScenes, adoptionEnabled)
     }
 
     plan.devices.each { devicePlan ->
-        addBulkImportSyncAction(plan, devicePlan, devicePlan.driverName, plan.createDevices, plan.updateDevices)
+        addBulkImportSyncAction(plan, devicePlan, devicePlan.driverName, plan.createDevices, plan.adoptDevices, plan.updateDevices, adoptionEnabled)
     }
 
     if (plan.errors) {
@@ -590,6 +677,18 @@ def bulkImport() {
                         applyUpeModuleChildDevice(childDevice, devicePlan, importTimestamp, true)
                     }
 
+                    plan.adoptScenes.each { scenePlan ->
+                        paragraph "Adopting existing link device [${scenePlan.deviceNetworkId}]"
+                        def childDevice = getChildDevice(scenePlan.deviceNetworkId)
+                        applyUpeSceneChildDevice(childDevice, scenePlan, importTimestamp, false)
+                    }
+
+                    plan.adoptDevices.each { devicePlan ->
+                        paragraph "Adopting existing ${devicePlan.driverName.toLowerCase()} [${devicePlan.deviceNetworkId}]"
+                        def childDevice = getChildDevice(devicePlan.deviceNetworkId)
+                        applyUpeModuleChildDevice(childDevice, devicePlan, importTimestamp, false)
+                    }
+
                     plan.updateScenes.each { scenePlan ->
                         paragraph "Updating link device [${scenePlan.deviceNetworkId}]"
                         def childDevice = getChildDevice(scenePlan.deviceNetworkId)
@@ -621,9 +720,10 @@ def bulkImport() {
                     }
 
                     def createdCount = plan.createScenes.size() + plan.createDevices.size()
+                    def adoptedCount = plan.adoptScenes.size() + plan.adoptDevices.size()
                     def updatedCount = plan.updateScenes.size() + plan.updateDevices.size()
                     def deletedCount = plan.deleteStaleDeviceNetworkIds.size()
-                    paragraph "Import sync completed successfully: ${createdCount} created, ${updatedCount} updated, ${deletedCount} deleted, ${plan.skippedChildDevices.size()} child conflicts skipped, ${plan.skippedModules.size()} unsupported modules skipped."
+                    paragraph "Import sync completed successfully: ${createdCount} created, ${adoptedCount} adopted, ${updatedCount} updated, ${deletedCount} deleted, ${plan.skippedChildDevices.size()} child conflicts skipped, ${plan.skippedModules.size()} unsupported modules skipped."
                     clearLinkRouteIndex()
                     app.removeSetting("upeFileData")
                 }

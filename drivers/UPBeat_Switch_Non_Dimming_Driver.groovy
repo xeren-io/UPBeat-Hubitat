@@ -266,7 +266,7 @@ def on() {
     def result = getParent().gotoLevel(settings.networkId.intValue(), settings.deviceId.intValue(), 0, 100, 0, settings.channelId.intValue())
     if (result.result) {
         logInfo("[${device.deviceNetworkId}] on: Command succeeded: switch=on.")
-        sendEvent(name: "switch", value: "on", isStateChange: true)
+        sendEventIfChanged("switch", "on")
         sendEvent(name: "status", value: "ok", isStateChange: false)
     } else {
         logError("[${device.deviceNetworkId}] on: Command failed: %s.", result.reason)
@@ -310,7 +310,7 @@ def off() {
     def result = getParent().gotoLevel(settings.networkId.intValue(), settings.deviceId.intValue(), 0, 0, 0, settings.channelId.intValue())
     if (result.result) {
         logInfo("[${device.deviceNetworkId}] off: Command succeeded: switch=off.")
-        sendEvent(name: "switch", value: "off", isStateChange: true)
+        sendEventIfChanged("switch", "off")
         sendEvent(name: "status", value: "ok", isStateChange: false)
     } else {
         logError("[${device.deviceNetworkId}] off: Command failed: %s.", result.reason)
@@ -348,11 +348,11 @@ def handleLinkEvent(String eventSource, String eventType, int networkId, int sou
             switch (eventType) {
                 case "UPB_ACTIVATE_LINK":
                     logInfo("[${device.deviceNetworkId}] handleLinkEvent: Processing UPB_ACTIVATE_LINK, setting switch=%s.", level == 0 ? "off" : "on")
-                    sendEvent(name: "switch", value: level == 0 ? "off" : "on", isStateChange: true)
+                    sendEventIfChanged("switch", level == 0 ? "off" : "on")
                     break
                 case "UPB_DEACTIVATE_LINK":
                     logInfo("[${device.deviceNetworkId}] handleLinkEvent: Processing UPB_DEACTIVATE_LINK, setting switch=off.")
-                    sendEvent(name: "switch", value: "off", isStateChange: true)
+                    sendEventIfChanged("switch", "off")
                     break
                 default:
                     logError("[${device.deviceNetworkId}] handleLinkEvent: Unknown event type: %s.", eventType)
@@ -385,7 +385,7 @@ def handleGotoEvent(String eventSource, String eventType, int networkId, int sou
         isCorrectParent()
         def switchValue = (level == 0) ? "off" : "on"
         logInfo("[${device.deviceNetworkId}] handleGotoEvent: Updating switch=%s for deviceId=0x%02X.", switchValue, settings.deviceId)
-        sendEvent(name: "switch", value: switchValue, isStateChange: true)
+        sendEventIfChanged("switch", switchValue)
         sendEvent(name: "status", value: "ok", isStateChange: false)
     } catch (IllegalStateException e) {
         logError("[${device.deviceNetworkId}] handleGotoEvent: Illegal state: %s.", e.message)
@@ -420,7 +420,7 @@ def handleDeviceStateReport(String eventSource, String eventType, int networkId,
         int level = Math.min(messageArgs[channel], 100)
         def switchValue = (level == 0) ? "off" : "on"
         logInfo("[${device.deviceNetworkId}] handleDeviceStateReport: Updating switch=%s for deviceId=0x%02X.", switchValue, settings.deviceId)
-        sendEvent(name: "switch", value: switchValue, isStateChange: true)
+        sendEventIfChanged("switch", switchValue)
         sendEvent(name: "status", value: "ok", isStateChange: false)
     } catch (IllegalStateException e) {
         logError("[${device.deviceNetworkId}] handleDeviceStateReport: Illegal state: %s.", e.message)
