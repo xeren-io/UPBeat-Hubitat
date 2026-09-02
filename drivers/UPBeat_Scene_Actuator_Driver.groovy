@@ -26,6 +26,10 @@ metadata {
 /***************************************************************************
  * Core Driver Functions
  ***************************************************************************/
+/**
+ * Called by Hubitat when this scene actuator child is created.
+ * Initializes the lastTrigger attribute and marks the driver healthy.
+ */
 void installed() {
     logTrace("[${device.deviceNetworkId}] installed: Entering.")
     try {
@@ -44,18 +48,22 @@ void installed() {
     logTrace("[${device.deviceNetworkId}] installed: Exiting.")
 }
 
+/**
+ * Called by Hubitat after scene actuator preferences are saved.
+ * Validates the UPB link address through the parent app and clears transient state.
+ */
 def updated() {
     logTrace("[${device.deviceNetworkId}] updated: Entering.")
     try {
         isCorrectParent()
         logDebug("[${device.deviceNetworkId}] updated: Validating settings: networkId=%d, linkId=%d.", settings.networkId, settings.linkId)
 
-        if (settings.networkId == null || settings.networkId < 0 || settings.networkId > 255) {
+        if (!isValidIntegerSetting(settings.networkId, 0, 255)) {
             logError("[${device.deviceNetworkId}] updated: Invalid network ID: %d (must be 0-255).", settings.networkId)
             sendEvent(name: "status", value: "error", descriptionText: "Network ID must be 0-255", isStateChange: true)
             return
         }
-        if (settings.linkId == null || settings.linkId < 1 || settings.linkId > 250) {
+        if (!isValidIntegerSetting(settings.linkId, 1, 250)) {
             logError("[${device.deviceNetworkId}] updated: Invalid link ID: %d (must be 1-250).", settings.linkId)
             sendEvent(name: "status", value: "error", descriptionText: "Link ID must be 1-250", isStateChange: true)
             return
@@ -87,6 +95,10 @@ def updated() {
 /***************************************************************************
  * Handlers for Driver Data
  ***************************************************************************/
+/**
+ * Called by the parent app during UPE import or manual sync updates.
+ * Stores the UPB network ID preference for this scene child.
+ */
 def updateNetworkId(Long networkId) {
     logTrace("[${device.deviceNetworkId}] updateNetworkId: Entering with networkId=%d.", networkId)
     try {
@@ -104,6 +116,10 @@ def updateNetworkId(Long networkId) {
     logTrace("[${device.deviceNetworkId}] updateNetworkId: Exiting.")
 }
 
+/**
+ * Called by the parent app during UPE import or manual sync updates.
+ * Stores the UPB link ID represented by this scene child.
+ */
 def updateLinkId(Long linkId) {
     logTrace("[${device.deviceNetworkId}] updateLinkId: Entering with linkId=%d.", linkId)
     try {
@@ -124,6 +140,10 @@ def updateLinkId(Long linkId) {
 /***************************************************************************
  * Handlers for Driver Capabilities
  ***************************************************************************/
+/**
+ * Called by Hubitat custom activate commands.
+ * Sends a UPB Activate Link command and locally routes the resulting scene effect.
+ */
 def activate() {
     logTrace("[${device.deviceNetworkId}] activate: Entering.")
     try {
@@ -134,15 +154,15 @@ def activate() {
         return [result: false, reason: e.message]
     }
 
-    if (!settings.networkId || settings.networkId < 0 || settings.networkId > 255) {
+    if (!isValidIntegerSetting(settings.networkId, 0, 255)) {
         logError("[${device.deviceNetworkId}] activate: Invalid network ID: %d (must be 0-255).", settings.networkId)
         sendEvent(name: "status", value: "error", descriptionText: "Network ID must be 0-255", isStateChange: true)
         return [result: false, reason: "Network ID must be 0-255"]
     }
-    if (!settings.linkId || settings.linkId < 0 || settings.linkId > 255) {
-        logError("[${device.deviceNetworkId}] activate: Invalid link ID: %d (must be 0-255).", settings.linkId)
-        sendEvent(name: "status", value: "error", descriptionText: "Link ID must be 0-255", isStateChange: true)
-        return [result: false, reason: "Link ID must be 0-255"]
+    if (!isValidIntegerSetting(settings.linkId, 1, 250)) {
+        logError("[${device.deviceNetworkId}] activate: Invalid link ID: %d (must be 1-250).", settings.linkId)
+        sendEvent(name: "status", value: "error", descriptionText: "Link ID must be 1-250", isStateChange: true)
+        return [result: false, reason: "Link ID must be 1-250"]
     }
 
     def networkId = settings.networkId.intValue()
@@ -162,6 +182,10 @@ def activate() {
     return result
 }
 
+/**
+ * Called by Hubitat custom deactivate commands.
+ * Sends a UPB Deactivate Link command and locally routes the resulting scene effect.
+ */
 def deactivate() {
     logTrace("[${device.deviceNetworkId}] deactivate: Entering.")
     try {
@@ -172,15 +196,15 @@ def deactivate() {
         return [result: false, reason: e.message]
     }
 
-    if (!settings.networkId || settings.networkId < 0 || settings.networkId > 255) {
+    if (!isValidIntegerSetting(settings.networkId, 0, 255)) {
         logError("[${device.deviceNetworkId}] deactivate: Invalid network ID: %d (must be 0-255).", settings.networkId)
         sendEvent(name: "status", value: "error", descriptionText: "Network ID must be 0-255", isStateChange: true)
         return [result: false, reason: "Network ID must be 0-255"]
     }
-    if (!settings.linkId || settings.linkId < 0 || settings.linkId > 255) {
-        logError("[${device.deviceNetworkId}] deactivate: Invalid link ID: %d (must be 0-255).", settings.linkId)
-        sendEvent(name: "status", value: "error", descriptionText: "Link ID must be 0-255", isStateChange: true)
-        return [result: false, reason: "Link ID must be 0-255"]
+    if (!isValidIntegerSetting(settings.linkId, 1, 250)) {
+        logError("[${device.deviceNetworkId}] deactivate: Invalid link ID: %d (must be 1-250).", settings.linkId)
+        sendEvent(name: "status", value: "error", descriptionText: "Link ID must be 1-250", isStateChange: true)
+        return [result: false, reason: "Link ID must be 1-250"]
     }
 
     def networkId = settings.networkId.intValue()
@@ -203,6 +227,10 @@ def deactivate() {
 /***************************************************************************
  * UPB Receive Handlers
  ***************************************************************************/
+/**
+ * Called by the parent app when a matching UPB link packet is observed or user-generated.
+ * Records when the scene actuator was triggered and whether it was activated or deactivated.
+ */
 def handleLinkEvent(String eventSource, String eventType, int networkId, int sourceId, int linkId) {
     logTrace("[${device.deviceNetworkId}] handleLinkEvent: Entering with eventSource=%s, eventType=%s, networkId=0x%02X, sourceId=0x%02X, linkId=%d.",
             eventSource, eventType, networkId, sourceId, linkId)

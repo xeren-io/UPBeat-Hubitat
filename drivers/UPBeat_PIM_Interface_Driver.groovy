@@ -46,18 +46,30 @@ metadata {
 /***************************************************************************
  * Helper Functions
  ***************************************************************************/
+/**
+ * Called by socket lifecycle handlers.
+ * Publishes the current TCP connection state for the PIM child device.
+ */
 private void setNetworkStatus(String state, String reason = '') {
     logDebug("[${device.deviceNetworkId}] Status: Setting network state to %s%s.", state, reason ? ": ${reason}" : "")
     String msg = "${device} is ${state.toLowerCase()}${reason ? ': ' + reason : ''}"
     sendEvent(name: "Network", value: state, descriptionText: msg, isStateChange: true)
 }
 
+/**
+ * Called by PIM configuration and socket handlers.
+ * Publishes whether the powerline interface is ready for UPB communication.
+ */
 private void setModuleStatus(String state, String reason = '') {
     logDebug("[${device.deviceNetworkId}] Status: Setting PIM state to %s%s.", state, reason ? ": ${reason}" : "")
     String msg = "${device} is ${state.toLowerCase()}${reason ? ': ' + reason : ''}"
     sendEvent(name: "PIM", value: state, descriptionText: msg, isStateChange: true)
 }
 
+/**
+ * Called by most PIM driver operations.
+ * Publishes driver-level health while allowing callers to force error state changes.
+ */
 private void setDeviceStatus(String state, String reason = '', boolean forceEvent = false) {
     logDebug("[${device.deviceNetworkId}] Status: Setting device state to %s%s.", state, reason ? ": ${reason}" : "")
     String msg = reason ?: "${device} is ${state.toLowerCase()}"
@@ -67,6 +79,10 @@ private void setDeviceStatus(String state, String reason = '', boolean forceEven
 /***************************************************************************
  * Core Driver Functions
  ***************************************************************************/
+/**
+ * Called by Hubitat when the PIM child device is created.
+ * Verifies the parent app relationship and initializes status.
+ */
 def installed() {
     logTrace("[${device.deviceNetworkId}] installed: Entering.")
     try {
@@ -83,6 +99,10 @@ def installed() {
     logTrace("[${device.deviceNetworkId}] installed: Exiting.")
 }
 
+/**
+ * Called by Hubitat when the PIM child device is removed.
+ * Closes the TCP socket and clears static transaction state for this device.
+ */
 def uninstalled() {
     logTrace("[${device.deviceNetworkId}] uninstalled: Entering.")
     try {
@@ -103,6 +123,10 @@ def uninstalled() {
     logTrace("[${device.deviceNetworkId}] uninstalled: Exiting.")
 }
 
+/**
+ * Called by Hubitat after PIM preferences are saved.
+ * Reinitializes the TCP connection using the current IP, port, and retry settings.
+ */
 def updated() {
     logTrace("[${device.deviceNetworkId}] updated: Entering.")
     try {
@@ -122,6 +146,10 @@ def updated() {
     logTrace("[${device.deviceNetworkId}] updated: Exiting.")
 }
 
+/**
+ * Called by Hubitat Initialize, updated(), and reconnect flows.
+ * Opens the socket and places the PIM into message mode.
+ */
 def initialize() {
     logTrace("[${device.deviceNetworkId}] initialize: Entering.")
     try {
@@ -158,6 +186,10 @@ def initialize() {
 /***************************************************************************
  * Web Socket User Defined
  ***************************************************************************/
+/**
+ * Called by Hubitat's raw socket implementation when connection status changes.
+ * Updates connection state and schedules reconnects after socket failures.
+ */
 def socketStatus(message) {
     logTrace("[${device.deviceNetworkId}] socketStatus: Entering with message=%s.", message)
     try {
@@ -182,6 +214,10 @@ def socketStatus(message) {
     logTrace("[${device.deviceNetworkId}] socketStatus: Exiting.")
 }
 
+/**
+ * Called by Hubitat's raw socket implementation when bytes arrive from the PIM.
+ * Parses PIM response frames and dispatches asynchronous UPB message reports.
+ */
 def parse(hexMessage) {
     logTrace("[${device.deviceNetworkId}] parse: Entering with message=0x%s.", hexMessage)
     deviceMutexes.putIfAbsent(device.deviceNetworkId, new Object())
@@ -326,6 +362,10 @@ def parse(hexMessage) {
 /***************************************************************************
  * Custom Driver Functions
  ***************************************************************************/
+/**
+ * Called by initialize() and reconnectSocket().
+ * Opens the raw TCP socket to the serial-to-network adapter configured for the PIM.
+ */
 def openSocket() {
     logTrace("[${device.deviceNetworkId}] openSocket: Entering.")
     try {
@@ -352,6 +392,10 @@ def openSocket() {
     logTrace("[${device.deviceNetworkId}] openSocket: Exiting.")
 }
 
+/**
+ * Called by uninstall and reconnect paths.
+ * Closes the raw TCP socket and publishes disconnected state.
+ */
 def closeSocket() {
     logTrace("[${device.deviceNetworkId}] closeSocket: Entering.")
     try {
@@ -371,6 +415,10 @@ def closeSocket() {
     logTrace("[${device.deviceNetworkId}] closeSocket: Exiting.")
 }
 
+/**
+ * Called by scheduled reconnect attempts after socket errors.
+ * Reopens the socket and returns the PIM to message mode.
+ */
 def reconnectSocket() {
     logTrace("[${device.deviceNetworkId}] reconnectSocket: Entering.")
     try {
@@ -395,12 +443,20 @@ def reconnectSocket() {
     logTrace("[${device.deviceNetworkId}] reconnectSocket: Exiting.")
 }
 
+/**
+ * Called by PIM command helpers after a frame has been encoded.
+ * Writes raw bytes to Hubitat's socket interface.
+ */
 private def sendBytes(byte[] bytes) {
     logTrace("[${device.deviceNetworkId}] sendBytes: Sending bytes=0x%s.", HexUtils.byteArrayToHexString(bytes))
     def hexString = HexUtils.byteArrayToHexString(bytes)
     interfaces.rawSocket.sendMessage(hexString)
 }
 
+/**
+ * Called by the parent app or future configuration API.
+ * Updates the configured serial-to-network adapter IP address.
+ */
 def setIPAddress(String ipAddress) {
     logTrace("[${device.deviceNetworkId}] setIPAddress: Entering with ipAddress=%s.", ipAddress)
     try {
@@ -420,6 +476,10 @@ def setIPAddress(String ipAddress) {
     logTrace("[${device.deviceNetworkId}] setIPAddress: Exiting.")
 }
 
+/**
+ * Called by the parent app or future configuration API.
+ * Updates the configured serial-to-network adapter TCP port.
+ */
 def setPortNumber(int portNumber) {
     logTrace("[${device.deviceNetworkId}] setPortNumber: Entering with portNumber=%d.", portNumber)
     try {
@@ -439,6 +499,10 @@ def setPortNumber(int portNumber) {
     logTrace("[${device.deviceNetworkId}] setPortNumber: Exiting.")
 }
 
+/**
+ * Called after socket initialization and reconnects.
+ * Writes the PIM register value needed for UPB message mode.
+ */
 def setPIMCommandMode() {
     logTrace("[${device.deviceNetworkId}] setPIMCommandMode: Entering.")
     def result = writePimRegister((byte) 0x70, [0x02] as byte[])
@@ -457,6 +521,10 @@ def setPIMCommandMode() {
     }
 }
 
+/**
+ * Called by PIM setup and diagnostic flows.
+ * Sends a PIM register read command and waits for the matching PR/PB/PE response.
+ */
 def readPimRegister(byte register, int numRegisters) {
     logTrace("[${device.deviceNetworkId}] readPimRegister: Entering with register=0x%02X, numRegisters=%d.", register, numRegisters)
 
@@ -545,6 +613,10 @@ def readPimRegister(byte register, int numRegisters) {
     }
 }
 
+/**
+ * Called by PIM setup flows such as setPIMCommandMode().
+ * Sends a PIM register write command and waits for the PA/PB/PE response.
+ */
 def writePimRegister(byte register, byte[] values) {
     logTrace("[${device.deviceNetworkId}] writePimRegister: Entering with register=0x%02X, values=%s.", register, values)
 
@@ -620,6 +692,10 @@ def writePimRegister(byte register, byte[] values) {
     }
 }
 
+/**
+ * Called by the parent app to send a UPB packet through the PIM.
+ * Serializes one PIM transmit transaction and waits for PA/PB/PE plus PK/PN/PU as required.
+ */
 def transmitMessage(short controlWord, byte networkId, byte destinationId, byte sourceId, byte messageDataId, byte[] messageArgument) {
     logTrace("[${device.deviceNetworkId}] transmitMessage: Entering with controlWord=0x%04X, networkId=0x%02X, destinationId=0x%02X, sourceId=0x%02X, messageDataId=0x%02X, messageArgument=%s.",
             controlWord, networkId & 0xFF, destinationId & 0xFF, sourceId & 0xFF, messageDataId & 0xFF, messageArgument ? "0x${HexUtils.byteArrayToHexString(messageArgument)}" : "null")
@@ -756,6 +832,10 @@ def transmitMessage(short controlWord, byte networkId, byte destinationId, byte 
     }
 }
 
+/**
+ * Called by runIn(0) from parse() for PU message reports.
+ * Processes observed UPB packets outside the immediate socket parser callback.
+ */
 def asyncParseMessageReport(Map data) {
     logTrace("[${device.deviceNetworkId}] asyncParseMessageReport: Entering.")
     try {
@@ -772,6 +852,10 @@ def asyncParseMessageReport(Map data) {
     logTrace("[${device.deviceNetworkId}] asyncParseMessageReport: Exiting.")
 }
 
+/**
+ * Called by asyncParseMessageReport() for each parsed UPB message packet.
+ * Routes link events, direct device events, and state reports to the parent app.
+ */
 def processMessage(byte[] data) {
     logTrace("[${device.deviceNetworkId}] processMessage: Entering with data=0x%s.", HexUtils.byteArrayToHexString(data))
     def messageDataString = HexUtils.byteArrayToHexString(data)
@@ -823,6 +907,10 @@ def processMessage(byte[] data) {
     logTrace("[${device.deviceNetworkId}] processMessage: Exiting.")
 }
 
+/**
+ * Called by processMessage() for observed UPB traffic this integration does not act on.
+ * Keeps unsupported but valid network chatter visible at debug level.
+ */
 private void handleCommand(String commandName, byte networkId, byte sourceId, byte destinationId, int[] args) {
     logDebug("[${device.deviceNetworkId}] handleCommand: Handling %s: networkId=0x%02X, sourceId=0x%02X, destinationId=0x%02X, args=%s.",
             commandName, networkId, sourceId, destinationId, args)

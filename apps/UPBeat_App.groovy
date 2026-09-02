@@ -25,7 +25,7 @@ import java.util.UUID
                 category: "device",
                 requiredInputs: [
                         [name: "deviceId", type: "number", title: "Device ID", range: "1..250", required: true],
-                        [name: "channelId", type: "number", title: "Channel ID", range: "0..255", defaultValue: 1, required: true]
+                        [name: "channelId", type: "number", title: "Channel ID", range: "1..255", defaultValue: 1, required: true]
                 ]
         ],
         "single_speed_fan": [
@@ -34,7 +34,7 @@ import java.util.UUID
                 category: "device",
                 requiredInputs: [
                         [name: "deviceId", type: "number", title: "Device ID", range: "1..250", required: true],
-                        [name: "channelId", type: "number", title: "Channel ID", range: "0..255", defaultValue: 1, required: true]
+                        [name: "channelId", type: "number", title: "Channel ID", range: "1..255", defaultValue: 1, required: true]
                 ]
         ],
         "dimming_switch": [
@@ -43,7 +43,7 @@ import java.util.UUID
                 category: "device",
                 requiredInputs: [
                         [name: "deviceId", type: "number", title: "Device ID", range: "1..250", required: true],
-                        [name: "channelId", type: "number", title: "Channel ID", range: "0..255", defaultValue: 1, required: true]
+                        [name: "channelId", type: "number", title: "Channel ID", range: "1..255", defaultValue: 1, required: true]
                 ]
         ],
         "multi_speed_fan": [
@@ -52,7 +52,7 @@ import java.util.UUID
                 category: "device",
                 requiredInputs: [
                         [name: "deviceId", type: "number", title: "Device ID", range: "1..250", required: true],
-                        [name: "channelId", type: "number", title: "Channel ID", range: "0..255", defaultValue: 1, required: true]
+                        [name: "channelId", type: "number", title: "Channel ID", range: "1..255", defaultValue: 1, required: true]
                 ]
         ],
         "scene_switch": [
@@ -653,7 +653,7 @@ def createDevice() {
     logTrace("createDevice")
 
     // Validate common inputs
-    if (!settings.deviceType || !settings.deviceName || !settings.networkId) {
+    if (!settings.deviceType || !settings.deviceName || settings.deviceName.toString().trim().length() == 0 || settings.networkId == null) {
         return dynamicPage(name: "createDevice", title: "Device Creation Failed", nextPage: "mainPage") {
             section("Error") {
                 paragraph "Device Type, Device Name, and Network ID are required."
@@ -671,7 +671,7 @@ def createDevice() {
         }
     }
 
-    def missingInputs = deviceConfig.requiredInputs.findAll { inputConfig -> !settings[inputConfig.name] }
+    def missingInputs = deviceConfig.requiredInputs.findAll { inputConfig -> settings[inputConfig.name] == null }
     if (missingInputs) {
         return dynamicPage(name: "createDevice", title: "Device Creation Failed", nextPage: "mainPage") {
             section("Error") {
@@ -693,7 +693,7 @@ def createDevice() {
     if (existingDevice) {
         return dynamicPage(name: "createDevice", title: "Device Creation Failed", nextPage: "mainPage") {
             section("Error") {
-                paragraph "A device with Network ID ${settings.networkId}, ${deviceConfig.category == 'scene' ? 'Link ID' : 'Device ID'} ${settings[deviceConfig.category == 'scene' ? 'linkId' : 'deviceId']}, and Channel ID ${settings.channelId ?: 'N/A'} already exists."
+                paragraph "A device with Network ID ${settings.networkId}, ${deviceConfig.category == 'scene' ? 'Link ID' : 'Device ID'} ${settings[deviceConfig.category == 'scene' ? 'linkId' : 'deviceId']}, and Channel ID ${settings.channelId == null ? 'N/A' : settings.channelId} already exists."
             }
         }
     }
@@ -910,17 +910,17 @@ void appButtonHandler(button) {
         case "addDeviceBtn":
             logTrace("createDevice")
             // Validate inputs based on device type
-            if (!settings.deviceType || !settings.deviceName || !settings.networkId) {
+            if (!settings.deviceType || !settings.deviceName || settings.deviceName.toString().trim().length() == 0 || settings.networkId == null) {
                 logError("Device Type, Device Name, and Network ID are required.")
                 return
             }
             if (settings.deviceType != "UPB Scene") {
-                if (!settings.deviceId || !settings.channelId) {
+                if (settings.deviceId == null || settings.channelId == null) {
                     logError("Device ID and Channel ID are required for ${settings.deviceType} devices.")
                     return
                 }
             } else {
-                if (!settings.linkId) {
+                if (settings.linkId == null) {
                     logError("Link ID is required for UPB Scene devices.")
                     return
                 }
@@ -937,7 +937,7 @@ void appButtonHandler(button) {
             // Check for duplicate device
             def existingDevice = getChildDevice(deviceNetworkId)
             if (existingDevice) {
-                logError("A device with Network ID ${settings.networkId}, Device/Link ID ${settings.deviceType == 'UPB Scene' ? settings.linkId : settings.deviceId}, and Channel ID ${settings.channelId ?: 'N/A'} already exists.")
+                logError("A device with Network ID ${settings.networkId}, Device/Link ID ${settings.deviceType == 'UPB Scene' ? settings.linkId : settings.deviceId}, and Channel ID ${settings.channelId == null ? 'N/A' : settings.channelId} already exists.")
                 return
             }
 
@@ -1374,6 +1374,32 @@ def requestDeviceState(Integer networkId, Integer deviceId, Integer sourceId) {
  * Custom App Functions
  ***************************************************************************/
 /**
+ * Called by parent-side settings validation before rebuilding child DNIs.
+ * Avoids Groovy truth checks so valid zero values, such as networkId, are not rejected.
+ */
+private boolean isIntegerInRange(value, int minValue, int maxValue) {
+    if (value == null) {
+        return false
+    }
+
+    try {
+        int numericValue
+        if (value instanceof Number) {
+            numericValue = value.intValue()
+        } else {
+            String valueText = value.toString().trim()
+            if (valueText.length() == 0) {
+                return false
+            }
+            numericValue = valueText.toInteger()
+        }
+        return numericValue >= minValue && numericValue <= maxValue
+    } catch (Exception e) {
+        return false
+    }
+}
+
+/**
  * Called by child drivers from updated() after their preferences are saved.
  * Rebuilds the child DNI from address settings and clears derived link routing.
  */
@@ -1391,18 +1417,34 @@ def updateDeviceSettings(device, settings) {
             return [success: false, error: "Unknown device type"]
         }
         def newDeviceNetworkId
+        if (!isIntegerInRange(settings.networkId, 0, 255)) {
+            logError("Cannot update deviceNetworkId for ${device.deviceNetworkId}: Invalid networkId ${settings.networkId}.")
+            return [success: false, error: "Network ID must be 0-255"]
+        }
         if (deviceConfig.category == "scene") {
-            if (!settings.networkId || !settings.linkId) {
+            if (settings.networkId == null || settings.linkId == null) {
 
                 logError("Cannot update deviceNetworkId for ${device.deviceNetworkId}: Missing networkId or linkId.")
                 return [success: false, error: "Missing networkId or linkId"]
             }
+            if (!isIntegerInRange(settings.linkId, 1, 250)) {
+                logError("Cannot update deviceNetworkId for ${device.deviceNetworkId}: Invalid linkId ${settings.linkId}.")
+                return [success: false, error: "Link ID must be 1-250"]
+            }
             newDeviceNetworkId = buildSceneNetworkId(settings.networkId.intValue(), settings.linkId.intValue())
         } else {
-            if (!settings.networkId || !settings.deviceId || !settings.channelId) {
+            if (settings.networkId == null || settings.deviceId == null || settings.channelId == null) {
 
                 logError("Cannot update deviceNetworkId for ${device.deviceNetworkId}: Missing networkId, deviceId, or channelId.")
                 return [success: false, error: "Missing networkId, deviceId, or channelId"]
+            }
+            if (!isIntegerInRange(settings.deviceId, 1, 250)) {
+                logError("Cannot update deviceNetworkId for ${device.deviceNetworkId}: Invalid deviceId ${settings.deviceId}.")
+                return [success: false, error: "Device ID must be 1-250"]
+            }
+            if (!isIntegerInRange(settings.channelId, 1, 255)) {
+                logError("Cannot update deviceNetworkId for ${device.deviceNetworkId}: Invalid channelId ${settings.channelId}.")
+                return [success: false, error: "Channel ID must be 1-255"]
             }
             newDeviceNetworkId = buildDeviceNetworkId(settings.networkId.intValue(), settings.deviceId.intValue(), settings.channelId.intValue())
         }
@@ -1570,6 +1612,27 @@ private List getRoutedLinkDeviceNetworkIds(int networkId, int linkId) {
 }
 
 /**
+ * Called by handleDeviceEvent() for incoming direct GOTO packets.
+ * UPB channel 0 means "all channels", while Hubitat children are modeled as
+ * one child per real channel, so channel 0 expands to every matching child.
+ */
+private List getRoutedGotoDeviceNetworkIds(int networkId, int destinationId, int channel) {
+    if (channel != 0) {
+        return [buildDeviceNetworkId(networkId, destinationId, channel)]
+    }
+
+    def routedDeviceNetworkIds = []
+    (1..255).each { childChannel ->
+        def deviceNetworkId = buildDeviceNetworkId(networkId, destinationId, childChannel)
+        if (getChildDevice(deviceNetworkId)) {
+            routedDeviceNetworkIds.add(deviceNetworkId)
+        }
+    }
+    logDebug("Expanded UPB_GOTO channel 0 for networkId=${networkId}, deviceId=${destinationId} to ${routedDeviceNetworkIds.size()} child devices.")
+    return routedDeviceNetworkIds
+}
+
+/**
  * Called by the PIM child when a UPB link packet is observed and by scene children after local activation.
  * Dispatches the event only to the matching scene child and devices indexed for that link.
  */
@@ -1619,15 +1682,20 @@ def handleDeviceEvent(String eventSource, String eventType, int networkId, int s
             def level = messageArgs[0]
             def rate = messageArgs[1]
             def channel = messageArgs[2]
-            def deviceId = buildDeviceNetworkId(networkId, destinationId, channel)
-            def device = getChildDevice(deviceId)
-            if (device == null) {
-                logWarn("No device found for ${deviceId}")
-            } else {
-                try {
-                    device.handleGotoEvent(eventSource, eventType, networkId, sourceId, destinationId, level, rate, channel)
-                } catch (Exception e) {
-                    logWarn("Failed to call handleGotoEvent on ${deviceId}: ${e.message}")
+            def routedDeviceNetworkIds = getRoutedGotoDeviceNetworkIds(networkId, destinationId, channel)
+            if (routedDeviceNetworkIds.size() == 0) {
+                logWarn("No device found for UPB_GOTO networkId=${networkId}, deviceId=${destinationId}, channel=${channel}")
+            }
+            routedDeviceNetworkIds.each { deviceId ->
+                def device = getChildDevice(deviceId)
+                if (device == null) {
+                    logWarn("No device found for ${deviceId}")
+                } else {
+                    try {
+                        device.handleGotoEvent(eventSource, eventType, networkId, sourceId, destinationId, level, rate, channel)
+                    } catch (Exception e) {
+                        logWarn("Failed to call handleGotoEvent on ${deviceId}: ${e.message}")
+                    }
                 }
             }
             break;
@@ -1647,6 +1715,9 @@ def handleDeviceEvent(String eventSource, String eventType, int networkId, int s
                     }
                 }
             }
+            break;
+        case "UPB_REPORT_STATE":
+            logDebug("Observed UPB_REPORT_STATE request for networkId=${networkId}, deviceId=${destinationId}, sourceId=${sourceId}. Waiting for UPB_DEVICE_STATE response.")
             break;
         default:
             logWarn("Unhandled event eventType:${eventType}")

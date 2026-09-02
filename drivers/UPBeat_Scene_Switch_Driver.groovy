@@ -28,6 +28,10 @@ preferences {
 /***************************************************************************
  * Core Driver Functions
  ***************************************************************************/
+/**
+ * Called by Hubitat when this scene switch child is created.
+ * Initializes status for the virtual switch that represents one UPB link.
+ */
 void installed() {
     logTrace("[${device.deviceNetworkId}] installed: Entering.")
     try {
@@ -45,18 +49,22 @@ void installed() {
     logTrace("[${device.deviceNetworkId}] installed: Exiting.")
 }
 
+/**
+ * Called by Hubitat after scene switch preferences are saved.
+ * Validates the UPB link address through the parent and resets the virtual switch state policy.
+ */
 def updated() {
     logTrace("[${device.deviceNetworkId}] updated: Entering.")
     try {
         isCorrectParent()
         logDebug("[${device.deviceNetworkId}] updated: Validating settings: networkId=%d, linkId=%d.", settings.networkId, settings.linkId)
 
-        if (settings.networkId == null || settings.networkId < 0 || settings.networkId > 255) {
+        if (!isValidIntegerSetting(settings.networkId, 0, 255)) {
             logError("[${device.deviceNetworkId}] updated: Invalid network ID: %d (must be 0-255).", settings.networkId)
             sendEvent(name: "status", value: "error", descriptionText: "Network ID must be 0-255", isStateChange: true)
             return
         }
-        if (settings.linkId == null || settings.linkId < 1 || settings.linkId > 250) {
+        if (!isValidIntegerSetting(settings.linkId, 1, 250)) {
             logError("[${device.deviceNetworkId}] updated: Invalid link ID: %d (must be 1-250).", settings.linkId)
             sendEvent(name: "status", value: "error", descriptionText: "Link ID must be 1-250", isStateChange: true)
             return
@@ -90,6 +98,10 @@ def updated() {
 /***************************************************************************
  * Handlers for Driver Data
  ***************************************************************************/
+/**
+ * Called by the parent app during UPE import or manual sync updates.
+ * Stores the UPB network ID preference for this scene child.
+ */
 def updateNetworkId(Long networkId) {
     logTrace("[${device.deviceNetworkId}] updateNetworkId: Entering with networkId=%d.", networkId)
     try {
@@ -107,6 +119,10 @@ def updateNetworkId(Long networkId) {
     logTrace("[${device.deviceNetworkId}] updateNetworkId: Exiting.")
 }
 
+/**
+ * Called by the parent app during UPE import or manual sync updates.
+ * Stores the UPB link ID represented by this scene child.
+ */
 def updateLinkId(Long linkId) {
     logTrace("[${device.deviceNetworkId}] updateLinkId: Entering with linkId=%d.", linkId)
     try {
@@ -124,6 +140,10 @@ def updateLinkId(Long linkId) {
     logTrace("[${device.deviceNetworkId}] updateLinkId: Exiting.")
 }
 
+/**
+ * Called by scene switch command and receive handlers.
+ * Applies the optional forced-state preference to the displayed Hubitat switch value.
+ */
 def String effectiveSwitchState(String requested) {
     switch (settings.forcedState ?: "normal") {
         case "on":  return "on"
@@ -135,6 +155,10 @@ def String effectiveSwitchState(String requested) {
 /***************************************************************************
  * Handlers for Driver Capabilities
  ***************************************************************************/
+/**
+ * Called by Hubitat Switch capability commands.
+ * Sends a UPB Activate Link command and locally routes the resulting scene effect.
+ */
 def on() {
     logTrace("[${device.deviceNetworkId}] on: Entering.")
     try {
@@ -145,15 +169,15 @@ def on() {
         return [result: false, reason: e.message]
     }
 
-    if (!settings.networkId || settings.networkId < 0 || settings.networkId > 255) {
+    if (!isValidIntegerSetting(settings.networkId, 0, 255)) {
         logError("[${device.deviceNetworkId}] on: Invalid network ID: %d (must be 0-255).", settings.networkId)
         sendEvent(name: "status", value: "error", descriptionText: "Network ID must be 0-255", isStateChange: true)
         return [result: false, reason: "Network ID must be 0-255"]
     }
-    if (!settings.linkId || settings.linkId < 0 || settings.linkId > 255) {
-        logError("[${device.deviceNetworkId}] on: Invalid link ID: %d (must be 0-255).", settings.linkId)
-        sendEvent(name: "status", value: "error", descriptionText: "Link ID must be 0-255", isStateChange: true)
-        return [result: false, reason: "Link ID must be 0-255"]
+    if (!isValidIntegerSetting(settings.linkId, 1, 250)) {
+        logError("[${device.deviceNetworkId}] on: Invalid link ID: %d (must be 1-250).", settings.linkId)
+        sendEvent(name: "status", value: "error", descriptionText: "Link ID must be 1-250", isStateChange: true)
+        return [result: false, reason: "Link ID must be 1-250"]
     }
 
     def networkId = settings.networkId.intValue()
@@ -173,6 +197,10 @@ def on() {
     return result
 }
 
+/**
+ * Called by Hubitat Switch capability commands.
+ * Sends a UPB Deactivate Link command and locally routes the resulting scene effect.
+ */
 def off() {
     logTrace("[${device.deviceNetworkId}] off: Entering.")
     try {
@@ -183,15 +211,15 @@ def off() {
         return [result: false, reason: e.message]
     }
 
-    if (!settings.networkId || settings.networkId < 0 || settings.networkId > 255) {
+    if (!isValidIntegerSetting(settings.networkId, 0, 255)) {
         logError("[${device.deviceNetworkId}] off: Invalid network ID: %d (must be 0-255).", settings.networkId)
         sendEvent(name: "status", value: "error", descriptionText: "Network ID must be 0-255", isStateChange: true)
         return [result: false, reason: "Network ID must be 0-255"]
     }
-    if (!settings.linkId || settings.linkId < 0 || settings.linkId > 255) {
-        logError("[${device.deviceNetworkId}] off: Invalid link ID: %d (must be 0-255).", settings.linkId)
-        sendEvent(name: "status", value: "error", descriptionText: "Link ID must be 0-255", isStateChange: true)
-        return [result: false, reason: "Link ID must be 0-255"]
+    if (!isValidIntegerSetting(settings.linkId, 1, 250)) {
+        logError("[${device.deviceNetworkId}] off: Invalid link ID: %d (must be 1-250).", settings.linkId)
+        sendEvent(name: "status", value: "error", descriptionText: "Link ID must be 1-250", isStateChange: true)
+        return [result: false, reason: "Link ID must be 1-250"]
     }
 
     def networkId = settings.networkId.intValue()
@@ -214,6 +242,10 @@ def off() {
 /***************************************************************************
  * UPB Receive Handlers
  ***************************************************************************/
+/**
+ * Called by the parent app when a matching UPB link packet is observed or user-generated.
+ * Updates the virtual switch state while honoring the forced-state display preference.
+ */
 def handleLinkEvent(String eventSource, String eventType, int networkId, int sourceId, int linkId) {
     logTrace("[${device.deviceNetworkId}] handleLinkEvent: Entering with eventSource=%s, eventType=%s, networkId=0x%02X, sourceId=0x%02X, linkId=%d.",
             eventSource, eventType, networkId, sourceId, linkId)
@@ -234,7 +266,7 @@ def handleLinkEvent(String eventSource, String eventType, int networkId, int sou
                 success = true
                 break
             case "UPB_DEACTIVATE_LINK":
-                logInfo("[${device.deviceNetworkId}] handleLinkEvent: Deactivating scene for linkId=%d. Effective state: %s", settings.linkId, effectiveSwitchState("on"))
+                logInfo("[${device.deviceNetworkId}] handleLinkEvent: Deactivating scene for linkId=%d. Effective state: %s", settings.linkId, effectiveSwitchState("off"))
                 sendEvent(name: "switch", value: "off" , isStateChange: true)
                 pauseExecution(50)
                 sendEvent(name: "switch", value: effectiveSwitchState("off") , isStateChange: false)

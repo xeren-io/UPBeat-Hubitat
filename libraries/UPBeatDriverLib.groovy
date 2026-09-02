@@ -21,6 +21,32 @@ private void isCorrectParent() {
     }
 }
 
+/**
+ * Validates numeric Hubitat settings without using Groovy truth, because
+ * zero is falsey but valid for settings such as UPB networkId.
+ */
+private boolean isValidIntegerSetting(value, int minValue, int maxValue) {
+    if (value == null) {
+        return false
+    }
+
+    try {
+        int numericValue
+        if (value instanceof Number) {
+            numericValue = value.intValue()
+        } else {
+            String valueText = value.toString().trim()
+            if (valueText.length() == 0) {
+                return false
+            }
+            numericValue = valueText.toInteger()
+        }
+        return numericValue >= minValue && numericValue <= maxValue
+    } catch (Exception e) {
+        return false
+    }
+}
+
 def getReceiveComponents() {
     def components = [:]
     def hasErrors = false

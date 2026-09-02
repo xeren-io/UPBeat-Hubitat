@@ -45,6 +45,10 @@ metadata {
 /***************************************************************************
  * Core Driver Functions
  ***************************************************************************/
+/**
+ * Called by Hubitat when this child device is created.
+ * Initializes stored receive-component data and marks the driver healthy.
+ */
 void installed() {
     logTrace("[${device.deviceNetworkId}] installed: Entering.")
     try {
@@ -63,6 +67,10 @@ void installed() {
     logTrace("[${device.deviceNetworkId}] installed: Exiting.")
 }
 
+/**
+ * Called by Hubitat after device preferences are saved.
+ * Lets the parent app validate/rename the child DNI and refreshes link receive-component data.
+ */
 def updated() {
     logTrace("[${device.deviceNetworkId}] updated: Entering.")
     try {
@@ -99,6 +107,10 @@ def updated() {
 /***************************************************************************
  * Handlers for Driver Data
  ***************************************************************************/
+/**
+ * Called by the parent app during UPE import or manual sync updates.
+ * Stores the UPB network ID preference for this child channel.
+ */
 def updateNetworkId(Long networkId) {
     logTrace("[${device.deviceNetworkId}] updateNetworkId: Entering with networkId=%d.", networkId)
     try {
@@ -116,6 +128,10 @@ def updateNetworkId(Long networkId) {
     logTrace("[${device.deviceNetworkId}] updateNetworkId: Exiting.")
 }
 
+/**
+ * Called by the parent app during UPE import or manual sync updates.
+ * Stores the UPB module/unit ID preference for this child channel.
+ */
 def updateDeviceId(Long deviceId) {
     logTrace("[${device.deviceNetworkId}] updateDeviceId: Entering with deviceId=%d.", deviceId)
     try {
@@ -133,6 +149,10 @@ def updateDeviceId(Long deviceId) {
     logTrace("[${device.deviceNetworkId}] updateDeviceId: Exiting.")
 }
 
+/**
+ * Called by the parent app during UPE import or manual sync updates.
+ * Stores the real UPB channel number represented by this child device.
+ */
 def updateChannelId(Long channelId) {
     logTrace("[${device.deviceNetworkId}] updateChannelId: Entering with channelId=%d.", channelId)
     try {
@@ -150,6 +170,10 @@ def updateChannelId(Long channelId) {
     logTrace("[${device.deviceNetworkId}] updateChannelId: Exiting.")
 }
 
+/**
+ * Called by the parent app during UPE import or link configuration updates.
+ * Stores one link-to-level receive component slot for later link event routing.
+ */
 def updateReceiveComponentSlot(int slot, int linkId, int level) {
     logTrace("[${device.deviceNetworkId}] updateReceiveComponentSlot: Entering with slot=%d, linkId=%d, level=%d.", slot, linkId, level)
     try {
@@ -170,6 +194,10 @@ def updateReceiveComponentSlot(int slot, int linkId, int level) {
 /***************************************************************************
  * Handlers for Driver Capabilities
  ***************************************************************************/
+/**
+ * Called by Hubitat Refresh or the parent app's refresh-all action.
+ * Requests a UPB state report from the physical module backing this child.
+ */
 def refresh() {
     logTrace("[${device.deviceNetworkId}] refresh: Entering.")
     try {
@@ -180,12 +208,12 @@ def refresh() {
         return [result: false, reason: e.message]
     }
 
-    if (!settings.networkId || settings.networkId < 0 || settings.networkId > 255) {
+    if (!isValidIntegerSetting(settings.networkId, 0, 255)) {
         logError("[${device.deviceNetworkId}] refresh: Invalid network ID: %d (must be 0-255).", settings.networkId)
         sendEvent(name: "status", value: "error", descriptionText: "Network ID must be 0-255", isStateChange: true)
         return [result: false, reason: "Network ID must be 0-255"]
     }
-    if (!settings.deviceId || settings.deviceId < 1 || settings.deviceId > 250) {
+    if (!isValidIntegerSetting(settings.deviceId, 1, 250)) {
         logError("[${device.deviceNetworkId}] refresh: Invalid device ID: %d (must be 1-250).", settings.deviceId)
         sendEvent(name: "status", value: "error", descriptionText: "Device ID must be 1-250", isStateChange: true)
         return [result: false, reason: "Device ID must be 1-250"]
@@ -204,6 +232,10 @@ def refresh() {
     return result
 }
 
+/**
+ * Called by Hubitat Switch capability commands.
+ * Sends a UPB Goto command for this child channel at level 100.
+ */
 def on() {
     logTrace("[${device.deviceNetworkId}] on: Entering.")
     try {
@@ -214,17 +246,17 @@ def on() {
         return [result: false, reason: e.message]
     }
 
-    if (!settings.networkId || settings.networkId < 0 || settings.networkId > 255) {
+    if (!isValidIntegerSetting(settings.networkId, 0, 255)) {
         logError("[${device.deviceNetworkId}] on: Invalid network ID: %d (must be 0-255).", settings.networkId)
         sendEvent(name: "status", value: "error", descriptionText: "Network ID must be 0-255", isStateChange: true)
         return [result: false, reason: "Network ID must be 0-255"]
     }
-    if (!settings.deviceId || settings.deviceId < 1 || settings.deviceId > 250) {
+    if (!isValidIntegerSetting(settings.deviceId, 1, 250)) {
         logError("[${device.deviceNetworkId}] on: Invalid device ID: %d (must be 1-250).", settings.deviceId)
         sendEvent(name: "status", value: "error", descriptionText: "Device ID must be 1-250", isStateChange: true)
         return [result: false, reason: "Device ID must be 1-250"]
     }
-    if (!settings.channelId || settings.channelId < 1 || settings.channelId > 255) {
+    if (!isValidIntegerSetting(settings.channelId, 1, 255)) {
         logError("[${device.deviceNetworkId}] on: Invalid channel ID: %d (must be 1-255).", settings.channelId)
         sendEvent(name: "status", value: "error", descriptionText: "Channel ID must be 1-255", isStateChange: true)
         return [result: false, reason: "Channel ID must be 1-255"]
@@ -244,6 +276,10 @@ def on() {
     return result
 }
 
+/**
+ * Called by Hubitat Switch capability commands.
+ * Sends a UPB Goto command for this child channel at level 0.
+ */
 def off() {
     logTrace("[${device.deviceNetworkId}] off: Entering.")
     try {
@@ -254,17 +290,17 @@ def off() {
         return [result: false, reason: e.message]
     }
 
-    if (!settings.networkId || settings.networkId < 0 || settings.networkId > 255) {
+    if (!isValidIntegerSetting(settings.networkId, 0, 255)) {
         logError("[${device.deviceNetworkId}] off: Invalid network ID: %d (must be 0-255).", settings.networkId)
         sendEvent(name: "status", value: "error", descriptionText: "Network ID must be 0-255", isStateChange: true)
         return [result: false, reason: "Network ID must be 0-255"]
     }
-    if (!settings.deviceId || settings.deviceId < 1 || settings.deviceId > 250) {
+    if (!isValidIntegerSetting(settings.deviceId, 1, 250)) {
         logError("[${device.deviceNetworkId}] off: Invalid device ID: %d (must be 1-250).", settings.deviceId)
         sendEvent(name: "status", value: "error", descriptionText: "Device ID must be 1-250", isStateChange: true)
         return [result: false, reason: "Device ID must be 1-250"]
     }
-    if (!settings.channelId || settings.channelId < 1 || settings.channelId > 255) {
+    if (!isValidIntegerSetting(settings.channelId, 1, 255)) {
         logError("[${device.deviceNetworkId}] off: Invalid channel ID: %d (must be 1-255).", settings.channelId)
         sendEvent(name: "status", value: "error", descriptionText: "Channel ID must be 1-255", isStateChange: true)
         return [result: false, reason: "Channel ID must be 1-255"]
@@ -287,6 +323,10 @@ def off() {
 /***************************************************************************
  * UPB Receive Handlers
  ***************************************************************************/
+/**
+ * Called by the parent app after a UPB link packet is routed to this child.
+ * Applies the programmed receive component level as the child switch state.
+ */
 def handleLinkEvent(String eventSource, String eventType, int networkId, int sourceId, int linkId) {
     logTrace("[${device.deviceNetworkId}] handleLinkEvent: Entering with eventSource=%s, eventType=%s, networkId=0x%02X, sourceId=0x%02X, linkId=%d.",
             eventSource, eventType, networkId, sourceId, linkId)
@@ -334,6 +374,10 @@ def handleLinkEvent(String eventSource, String eventType, int networkId, int sou
     logTrace("[${device.deviceNetworkId}] handleLinkEvent: Exiting.")
 }
 
+/**
+ * Called by the parent app when the PIM observes a direct UPB Goto for this child.
+ * Mirrors the observed level into Hubitat switch state without sending another command.
+ */
 def handleGotoEvent(String eventSource, String eventType, int networkId, int sourceId, int destinationId, int level, int rate, int channel) {
     logTrace("[${device.deviceNetworkId}] handleGotoEvent: Entering with eventSource=%s, eventType=%s, networkId=0x%02X, sourceId=0x%02X, destinationId=0x%02X, level=%d, rate=%d, channel=0x%02X.",
             eventSource, eventType, networkId, sourceId, destinationId, level, rate, channel)
@@ -353,13 +397,27 @@ def handleGotoEvent(String eventSource, String eventType, int networkId, int sou
     logTrace("[${device.deviceNetworkId}] handleGotoEvent: Exiting.")
 }
 
+/**
+ * Called by the parent app when the PIM receives a UPB Device State report.
+ * Reads this child's configured channel from the report and updates switch state.
+ */
 def handleDeviceStateReport(String eventSource, String eventType, int networkId, int sourceId, int destinationId, int[] messageArgs) {
     logTrace("[${device.deviceNetworkId}] handleDeviceStateReport: Entering with eventSource=%s, eventType=%s, networkId=0x%02X, sourceId=0x%02X, destinationId=0x%02X, args=%s.",
             eventSource, eventType, networkId, sourceId, destinationId, messageArgs)
     try {
         isCorrectParent()
+        if (!isValidIntegerSetting(settings.channelId, 1, 255)) {
+            logError("[${device.deviceNetworkId}] handleDeviceStateReport: Invalid channel ID: %d (must be 1-255).", settings.channelId)
+            sendEvent(name: "status", value: "error", descriptionText: "Channel ID must be 1-255", isStateChange: true)
+            return
+        }
         int channel = settings.channelId.intValue() - 1
-        int level = messageArgs.size() > channel ? Math.min(messageArgs[channel], 100) : 0
+        if (messageArgs == null || channel >= messageArgs.size()) {
+            logWarn("[${device.deviceNetworkId}] handleDeviceStateReport: Ignoring report without channelId=%d; args=%s.", settings.channelId, messageArgs)
+            sendEvent(name: "status", value: "error", descriptionText: "State report missing configured channel", isStateChange: true)
+            return
+        }
+        int level = Math.min(messageArgs[channel], 100)
         def switchValue = (level == 0) ? "off" : "on"
         logInfo("[${device.deviceNetworkId}] handleDeviceStateReport: Updating switch=%s for deviceId=0x%02X.", switchValue, settings.deviceId)
         sendEvent(name: "switch", value: switchValue, isStateChange: true)
